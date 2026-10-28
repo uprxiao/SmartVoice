@@ -1,0 +1,99 @@
+# 操作系统与编辑器临时文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# 本机环境、密钥与日志
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+logs/
+.aws/
+
+# Python 依赖、缓存与测试产物
+.venv
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# JavaScript 依赖、构建与测试产物
+node_modules/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+.vite/
+.cache/
+/release/
+/desktop/release/
+
+# 本地运行数据和临时音频
+/tmp/
+/temp/
+/data/
+/server/tmp/
+/server/data/
+*.sqlite
+*.sqlite3
+*.db
+
+# 桌面端构建时生成的原生 helper
+/desktop/resources/voice/
+
+# 模型权重由部署环境提供
+/models/
+/server/models/
+*.gguf
+*.safetensors
+ggml-*.bin
+
+# ---- 本地保留、不提交到公开仓库（2026-10-28 开源整理）----
+# 竞品研究、评审过程记录、实验与真实环境验收材料（含截图、本机路径与个人信息）
+docs/00-research/
+docs/review/
+experiments/
+scripts/acceptance/*
+!scripts/acceptance/capacity_preflight.py
+!scripts/acceptance/capacity_resource_snapshot.py
+!scripts/acceptance/capacity_stream_runner.py
+
+# 原型对照截图与视觉基准、原型验证记录（保留 README 与页面状态矩阵）
+docs/01-prototype/screenshots/
+docs/01-prototype/*-visual-baseline.md
+docs/01-prototype/verification-*
+
+# 测试：只公开用例定义、覆盖表、执行矩阵、夹具说明与实验模板，执行记录与证据只在本地
+docs/04-test/*
+!docs/04-test/test-cases.md
+!docs/04-test/test-cases-v2.md
+!docs/04-test/coverage.md
+!docs/04-test/execution-matrix.md
+!docs/04-test/experiment-record-template.md
+!docs/04-test/fixtures.md
+!docs/04-test/fixtures/
+
+# 过程交接、讨论稿与内部阶段日志（围绕上述本地实验/记录撰写）
+docs/README-internal-history.md
+docs/03-architecture/asr-llm-experiment-handoff-20261022.md
+docs/03-architecture/asr-llm-experiment-handoff-20261022/
+docs/03-architecture/deepseek-complete-integration-handoff-20261023.md
+docs/03-architecture/r2-implementation-handoff-20261024.md
+docs/02-prd/fast-correction-learning-proposal-20261028.md
+docs/02-prd/r2-integration-change-discussion-20261023.md
+
+# 本机真实模型配置（含本机路径），示例见 server/config/app.real.example.yaml
+server/config/app.real.yaml

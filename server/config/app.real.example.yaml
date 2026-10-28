@@ -1,0 +1,48 @@
+environment: development
+
+server:
+  host: 127.0.0.1
+  port: 17863
+
+database:
+  url_env: SVI_DATABASE_URL
+
+security:
+  cors_origins:
+    - http://127.0.0.1:17864
+
+audio:
+  active_pcm_budget_bytes: 134217728
+
+sessions:
+  initial_max_active: 20
+  admission_ceiling: 20
+
+asr:
+  provider: mlx_whisper
+  model_id: whisper-large-v3-turbo-4bit
+  model_path: /path/to/models/asr/whisper-large-v3-turbo-4bit  # 改为本机模型实际位置
+  language: auto
+  stable_partial_required: true
+  decode_interval_ms: 1000
+  finish_timeout_ms: 10000
+  execution_slots: 1
+
+llm:
+  # 历史部署配置显式保留旧协议；新Qwen/R2配置另见app.r2.example.yaml。
+  refine_protocol: legacy_edits
+  provider: ollama
+  # 与原后端 smartdd-speech-recognition 保持一致：qwen3-coder:30b，不得擅自更换
+  model_id: qwen3-coder:30b
+  base_url: http://127.0.0.1:11434
+  structured_output: json_object
+  temperature: 0
+  call_timeout_ms: 10000
+  max_inflight: 2
+
+pipeline:
+  stop_to_result_budget_ms: 30000
+  classification_budget_ms: 10000
+
+statistics:
+  timezone: Asia/Shanghai

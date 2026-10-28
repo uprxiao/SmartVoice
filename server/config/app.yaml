@@ -1,0 +1,59 @@
+environment: development
+
+server:
+  host: 127.0.0.1
+  port: 17863
+  workers: 1
+
+database:
+  url_env: SVI_DATABASE_URL
+  pool_size: 5
+  max_overflow: 5
+  pool_timeout_seconds: 2
+
+auth:
+  issuer: smartvoiceinput-dev
+  audience: smartvoiceinput
+
+security:
+  cors_origins:
+    - http://127.0.0.1:17864
+    - http://localhost:17864
+
+audio:
+  encoding: pcm_s16le
+  sample_rate_hz: 16000
+  channels: 1
+  chunk_ms: 250
+  max_duration_seconds: 180
+  active_pcm_budget_bytes: 134217728
+
+sessions:
+  initial_max_active: 20
+  admission_ceiling: 20
+  per_user: 1
+  queue_size: 0
+
+asr:
+  provider: mock
+  model_id: mock-asr
+  language: auto
+  stable_partial_required: true
+  finish_timeout_ms: 10000
+
+llm:
+  refine_protocol: ds_r2
+  max_output_tokens: 8192
+  provider: mock
+  model_id: mock-llm
+  structured_output: json_object
+  temperature: 0
+  call_timeout_ms: 10000
+  max_inflight: 4
+
+pipeline:
+  stop_to_result_budget_ms: 30000
+  classification_budget_ms: 10000
+
+statistics:
+  timezone: Asia/Shanghai

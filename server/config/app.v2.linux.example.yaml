@@ -1,0 +1,66 @@
+# V2 Linux 部署样例（以 server 为 cwd）。复制到 /etc/smartvoiceinput/app.yaml 后按实际填写。
+# 只含变量名，不含任何密钥值；密钥通过 deploy/linux/svi.env.example 列出的环境变量注入。
+# 后台“模型配置”可另行添加/切换 provider；这里的 asr/llm 是启动默认与兜底（V2 设计 §7.2）。
+environment: production
+server:
+  host: 127.0.0.1
+  port: 17863
+  workers: 1
+database:
+  url_env: SVI_DATABASE_URL
+security:
+  # 出口严格白名单（§6.3）：公网地址必须命中清单；本机/内网地址按 V1 规则允许。
+  egress_policy: allowlist
+  egress_allowlist:
+    - "*.maas.aliyuncs.com"
+    - "api.deepseek.com"
+audio:
+  # 部署录音上限与每会话 PCM 预留（§4.1/§4.2，S4 澄清 C1）：云端 360 秒。
+  max_duration_seconds: 360
+  active_pcm_budget_bytes: 1073741824
+retry:
+  # 失败音频单列预算（S4 澄清 C2）：20 × 11.52 MB ≈ 230 MB。
+  audio_budget_bytes: 268435456
+  max_cached_sessions: 20
+sessions:
+  initial_max_active: 8
+  admission_ceiling: 20
+asr:
+  provider: bailian_realtime
+  model_id: qwen3-asr-flash-realtime
+  # 业务空间地址按账号地域填写（T8）；必须命中 egress_allowlist。
+  remote_base_url: wss://ws-REPLACE.cn-beijing.maas.aliyuncs.com
+  api_key_env: SVI_DASHSCOPE_API_KEY
+  language: zh
+  stable_partial_required: true
+  # 云端 provider 允许最多 25000（§4.4，C3）。
+  finish_timeout_ms: 25000
+  params:
+    segment_target_s: 30
+    segment_window_s: 5
+    segment_min_s: 10
+    segment_silence_ratio: 0.15
+    catchup_rate: 2.0
+    max_reconnects: 8
+    max_record_seconds: 360
+    # 默认保守 8，目标环境实测后再调整（T9）。
+    max_concurrent_sessions: 8
+    use_env_proxy: false
+    connect_timeout_ms: 15000
+llm:
+  provider: openai_compatible
+  model_id: deepseek-flash
+  base_url: https://api.deepseek.com
+  api_key_env: SVI_DEEPSEEK_API_KEY
+  refine_protocol: ds_r2
+  thinking: disabled
+  structured_output: json_object
+  temperature: 0
+  max_output_tokens: 8192
+  call_timeout_ms: 10000
+  automatic_retries_per_attempt: 1
+  fidelity_audit: "off"
+# Linux 上没有本机分类模型时不配置 classification_llm：学习分类按 V1 规则不发往公网整理模型。
+pipeline:
+  stop_to_result_budget_ms: 30000
+  classification_budget_ms: 10000

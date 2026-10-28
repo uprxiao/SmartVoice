@@ -1,0 +1,113 @@
+[
+  {
+    "id": "literal_noop",
+    "input": {
+      "transcript": "把标签写成“呃，暂缓出货”，包装不得拆开。",
+      "terms": []
+    },
+    "output": {
+      "edits": []
+    }
+  },
+  {
+    "id": "sequence_noop",
+    "input": {
+      "transcript": "先浸泡 7 分钟，再静置 4 分钟。",
+      "terms": []
+    },
+    "output": {
+      "edits": []
+    }
+  },
+  {
+    "id": "independent_filler_repeat",
+    "input": {
+      "transcript": "呃，先归档收据，接着接着核对发票。",
+      "terms": []
+    },
+    "output": {
+      "edits": [
+        {
+          "kind": "filler",
+          "before": "呃，",
+          "after": ""
+        },
+        {
+          "kind": "repetition",
+          "before": "接着接着",
+          "after": "接着"
+        }
+      ]
+    }
+  },
+  {
+    "id": "correction_complete_constraint",
+    "input": {
+      "transcript": "每批处理 6 份，不对，改为至少 8 份，标签保持原样。",
+      "terms": []
+    },
+    "output": {
+      "edits": [
+        {
+          "kind": "self_correction",
+          "before": "6 份，不对，改为至少 8 份",
+          "after": "至少 8 份",
+          "old": "6 份",
+          "trigger": "不对",
+          "final": "至少 8 份"
+        }
+      ]
+    }
+  },
+  {
+    "id": "term_position_and_common_meaning",
+    "input": {
+      "transcript": "打开工作台 quartz 整理笔记，再找 quartz 石英标本。",
+      "terms": [
+        {
+          "id": "e9b1d51a-5d44-451c-bff1-05a3268e3f16",
+          "term": "QuartzDesk",
+          "aliases": [
+            "quartz"
+          ],
+          "contexts": [
+            {
+              "alias_norm": "quartz",
+              "before": "quartz",
+              "after": "QuartzDesk",
+              "left": "打开工作台 ",
+              "right": " 整理笔记"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "edits": [
+        {
+          "kind": "term_correction",
+          "before": "工作台 quartz",
+          "after": "工作台 QuartzDesk",
+          "dictionary_term_id": "e9b1d51a-5d44-451c-bff1-05a3268e3f16",
+          "dictionary_alias": "quartz"
+        }
+      ]
+    }
+  },
+  {
+    "id": "layout_only",
+    "input": {
+      "transcript": "先核对清单 再封箱",
+      "terms": []
+    },
+    "output": {
+      "edits": [
+        {
+          "kind": "format",
+          "before": "清单 再",
+          "after": "清单，再"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**', 'release/**', '0.*']
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+      - name: Validate workflow syntax and expressions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes=
+
+  release-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install release validation dependencies
+        working-directory: desktop
+        # Linux validates builder configuration; native bundle checks run on macOS.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test version, tag and artifact rules
+        run: node --test scripts/release/release.test.mjs
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: svi
+          POSTGRES_PASSWORD: svi_local_dev
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U svi -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SVI_TEST_PG_HOST: 127.0.0.1
+      SVI_TEST_PG_PORT: '5432'
+      SVI_TEST_PG_USER: svi
+      SVI_TEST_PG_PASSWORD: svi_local_dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install server dependencies
+        working-directory: server
+        run: uv sync --frozen --extra dev
+      - name: Run server tests
+        working-directory: server
+        # The eight explicit-clock experiments run below with their required
+        # opt-in/evidence environment; all remaining nodes run here.
+        run: >-
+          uv run pytest -q
+          --ignore=tests/integration/test_capacity_retry_cache_confirmed600.py
+          --ignore=tests/integration/test_capacity_retry_cache_late600.py
+          --ignore=tests/integration/test_retry_cache_owned_worker_real600.py
+          --ignore=tests/integration/test_retry_raw_commit_natural600.py
+          --ignore=tests/integration/test_asr599_owned_locked_natural600.py
+          --ignore=tests/integration/test_retry_idle_and_late599_natural600.py
+          --ignore=tests/integration/test_capacity_retry_cache_real600.py
+          --ignore=tests/integration/test_history_refine_retry_real120.py
+
+  server-clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file:
+          - test_capacity_retry_cache_confirmed600.py
+          - test_capacity_retry_cache_late600.py
+          - test_retry_cache_owned_worker_real600.py
+          - test_retry_raw_commit_natural600.py
+          - test_asr599_owned_locked_natural600.py
+          - test_retry_idle_and_late599_natural600.py
+          - test_capacity_retry_cache_real600.py
+          - test_history_refine_retry_real120.py
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: svi
+          POSTGRES_PASSWORD: svi_local_dev
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U svi -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SVI_TEST_PG_HOST: 127.0.0.1
+      SVI_TEST_PG_PORT: '5432'
+      SVI_TEST_PG_USER: svi
+      SVI_TEST_PG_PASSWORD: svi_local_dev
+      SVI_RUN_REAL_600S: '1'
+      SVI_RUN_HIST10_REAL120: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install server dependencies
+        working-directory: server
+        run: uv sync --frozen --extra dev
+      - name: Run original clock experiment
+        working-directory: server
+        env:
+          TEST_FILE: ${{ matrix.test_file }}
+          SVI_TTL_EVIDENCE_DIR: ${{ runner.temp }}/svi-clock-evidence
+          SVI_HIST10_EVIDENCE_DIR: ${{ runner.temp }}/svi-clock-evidence
+        run: uv run pytest -q "tests/integration/$TEST_FILE" --junitxml="$RUNNER_TEMP/clock-tests.xml"
+      - name: Preserve clock experiment results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clock-${{ matrix.test_file }}
+          path: |
+            ${{ runner.temp }}/clock-tests.xml
+            ${{ runner.temp }}/svi-clock-evidence/
+          if-no-files-found: warn
+
+  desktop:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Prepare locked Electron runtime for native identity tests
+        working-directory: desktop
+        run: node node_modules/electron/install.js
+      - name: Typecheck desktop
+        working-directory: desktop
+        run: pnpm typecheck
+      - name: Test desktop
+        working-directory: desktop
+        run: pnpm test
+      - name: Build desktop
+        working-directory: desktop
+        run: pnpm build
+      - name: Test release tools and native macOS bundle identity
+        working-directory: desktop
+        run: pnpm test:release
+
+  admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: admin/pnpm-lock.yaml
+      - name: Install admin dependencies
+        working-directory: admin
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck and build admin
+        working-directory: admin
+        run: pnpm build

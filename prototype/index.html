@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartVoiceInput · 方案 B 原型</title>
+  <link rel="stylesheet" href="./assets/app.css">
+</head>
+<body>
+  <div class="prototype-shell">
+    <header class="review-toolbar" aria-label="原型评审工具">
+      <div><strong>方案 B · 交互原型</strong><span>虚构数据，仅内存演示；不联网、不录音、不写入其他应用</span></div>
+      <nav><a href="#login">首次使用</a><a href="#home">桌面端</a><a href="#admin-login">管理后台</a>
+        <label>状态 <select id="sceneSelect" aria-label="演示状态"></select></label><button id="resetDemo">重置演示</button>
+      </nav>
+    </header>
+    <div class="app-window" id="appWindow">
+      <div class="titlebar"><div class="traffic" aria-hidden="true"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><span id="windowLabel">SmartVoiceInput</span></div>
+      <div class="app-body" id="appBody"></div>
+      <div class="modal-overlay" id="modalLayer"></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+    <footer class="review-footer">评审入口与场景可直接分享为 URL hash。真实权限、模型、账号鉴权与系统插入在 S4/S5 验证。</footer>
+  </div>
+  <script src="./assets/providers.js"></script>
+  <script src="./assets/app.js"></script>
+</body>
+</html>

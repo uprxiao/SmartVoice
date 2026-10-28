@@ -1,0 +1,252 @@
+{
+  "status": "design_vectors_only_not_executed",
+  "positive": [
+    {
+      "id": "T01",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "嗯那个，帮我加一个按钮，然后然后记得不要改数据库",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "filler",
+            "before": "嗯那个，",
+            "after": ""
+          },
+          {
+            "kind": "repetition",
+            "before": "然后然后",
+            "after": "然后"
+          }
+        ]
+      },
+      "expected_reconstruction": "帮我加一个按钮，然后记得不要改数据库",
+      "requires_independent_audit": true,
+      "status": "not_executed"
+    },
+    {
+      "id": "T02",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "重试 3 次，不对，是 2 次，每次间隔 5 秒",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "self_correction",
+            "before": "3 次，不对，是 2 次",
+            "after": "2 次",
+            "old": "3 次",
+            "trigger": "不对",
+            "final": "2 次"
+          }
+        ]
+      },
+      "expected_reconstruction": "重试 2 次，每次间隔 5 秒",
+      "requires_independent_audit": true,
+      "status": "not_executed"
+    },
+    {
+      "id": "T03",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "数据库用 MySQL，不对，改用 Postgres，但是前端不变",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "self_correction",
+            "before": "MySQL，不对，改用 Postgres",
+            "after": "Postgres",
+            "old": "MySQL",
+            "trigger": "不对",
+            "final": "Postgres"
+          }
+        ]
+      },
+      "expected_reconstruction": "数据库用 Postgres，但是前端不变",
+      "requires_independent_audit": true,
+      "status": "not_executed"
+    },
+    {
+      "id": "T06",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "有三个要求：保留日志，重试两次，显示错误",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "format",
+            "before": "有三个要求：保留日志，重试两次，显示错误",
+            "after": "有三个要求：\n- 保留日志\n- 重试两次\n- 显示错误"
+          }
+        ]
+      },
+      "expected_reconstruction": "有三个要求：\n- 保留日志\n- 重试两次\n- 显示错误",
+      "requires_independent_audit": false,
+      "status": "not_executed"
+    },
+    {
+      "id": "T12",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "保存日志，保存日志，保存日志，保存日志，保存日志",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "repetition",
+            "before": "保存日志，保存日志，保存日志，保存日志，保存日志",
+            "after": "保存日志"
+          }
+        ]
+      },
+      "expected_reconstruction": "保存日志",
+      "requires_independent_audit": true,
+      "status": "not_executed"
+    },
+    {
+      "id": "T14",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "先检查权限 再开始录音",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "format",
+            "before": "权限 再",
+            "after": "权限，再"
+          }
+        ]
+      },
+      "expected_reconstruction": "先检查权限，再开始录音",
+      "requires_independent_audit": false,
+      "status": "not_executed"
+    },
+    {
+      "id": "O01-natural-order",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "嗯，日志先保存，再检查配置",
+      "terms": [],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "filler",
+            "before": "嗯，",
+            "after": ""
+          }
+        ]
+      },
+      "expected_reconstruction": "日志先保存，再检查配置",
+      "requires_independent_audit": true,
+      "status": "not_executed"
+    },
+    {
+      "id": "L08-position",
+      "origin": "existing synthetic fixed fixture; hand-constructed candidate response, not model output",
+      "raw": "启动我的助手 cloud 来检查代码，再比较 cloud 云服务的价格",
+      "terms": [
+        {
+          "id": "d30275fc-614d-4a4b-a77a-6c21bfbedaf8",
+          "term": "claw",
+          "norm": "claw",
+          "aliases": [
+            "cloud"
+          ],
+          "ambiguous_alias_norms": [],
+          "contexts": [
+            {
+              "alias_norm": "cloud",
+              "before": "cloud",
+              "after": "claw",
+              "left": "启动我的助手 ",
+              "right": " 来检查代码"
+            }
+          ]
+        }
+      ],
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "term_correction",
+            "before": "启动我的助手 cloud 来检查代码",
+            "after": "启动我的助手 claw 来检查代码",
+            "dictionary_term_id": "d30275fc-614d-4a4b-a77a-6c21bfbedaf8",
+            "dictionary_alias": "cloud"
+          }
+        ]
+      },
+      "expected_reconstruction": "启动我的助手 claw 来检查代码，再比较 cloud 云服务的价格",
+      "requires_independent_audit": true,
+      "expected_actual_source_codepoint_span": [
+        7,
+        12
+      ],
+      "status": "not_executed; real audit must judge this first occurrence and preserve ordinary second occurrence"
+    }
+  ],
+  "negative": [
+    {
+      "id": "overlapping-matches",
+      "raw": "aaaa",
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "filler",
+            "before": "aa",
+            "after": ""
+          }
+        ]
+      },
+      "expected": "reject at non-unique before, even though ordinary non-overlap counting would find only two"
+    },
+    {
+      "id": "ambiguous-filler-splice",
+      "raw": "嗯嗯",
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "filler",
+            "before": "嗯嗯",
+            "after": "嗯"
+          }
+        ]
+      },
+      "expected": "reject multiple deletion positions; do not choose first; this is a repetition candidate instead"
+    },
+    {
+      "id": "format-decimal",
+      "raw": "等待3.5秒",
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "format",
+            "before": "3.5",
+            "after": "35"
+          }
+        ]
+      },
+      "expected": "raw fallback/protected_content_changed before audit; effective must keep original decimal"
+    },
+    {
+      "id": "cross-kind-fields",
+      "raw": "嗯，保存日志",
+      "candidate_wire": {
+        "edits": [
+          {
+            "kind": "filler",
+            "before": "嗯，",
+            "after": "",
+            "trigger": "不对"
+          }
+        ]
+      },
+      "expected": "schema invalid; at most one shared schema retry"
+    },
+    {
+      "id": "unapplied-noop",
+      "raw": "数据库用 MySQL，不对，改用 Postgres，但是前端不变",
+      "candidate_wire": {
+        "edits": []
+      },
+      "expected": "no claim of quality pass; existing heuristic may return raw without review, which remains a functional failure for this fixture"
+    }
+  ]
+}

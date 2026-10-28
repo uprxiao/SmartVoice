@@ -1,0 +1,82 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      require_mac_signing:
+        type: boolean
+        default: false
+    secrets:
+      MAC_CERTIFICATE:
+        required: false
+      MAC_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: mac
+            arch: arm64
+            runner: macos-latest
+          - platform: mac
+            arch: x64
+            runner: macos-15-intel
+          - platform: win
+            arch: x64
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Build and verify installer
+        shell: bash
+        env:
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          BUILD_ARCH: ${{ matrix.arch }}
+          SVI_REQUIRE_MAC_SIGNING: ${{ inputs.require_mac_signing && '1' || '0' }}
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+        run: node scripts/release/build.mjs --platform "$BUILD_PLATFORM" --arch "$BUILD_ARCH"
+      - name: Upload verified installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartvoiceinput-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/packages/${{ matrix.platform }}-${{ matrix.arch }}/SmartVoiceInput-*.dmg
+            release/packages/${{ matrix.platform }}-${{ matrix.arch }}/SmartVoiceInput-*.exe
+            release/packages/${{ matrix.platform }}-${{ matrix.arch }}/manifest-*.json
+          if-no-files-found: error
+          retention-days: 14

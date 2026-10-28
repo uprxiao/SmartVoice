@@ -1,0 +1,8 @@
+{
+  "channel": "preview",
+  "service": {
+    "apiBaseUrl": "https://192.168.14.151",
+    "caCertificate": "desktop/resources/service-ca.crt",
+    "caSha256": "6a3dc65bb88ffd354ee66eba76c0a54fc16c82d1e3a0571bcd2865618007c885"
+  }
+}

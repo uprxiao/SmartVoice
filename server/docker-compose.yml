@@ -1,0 +1,24 @@
+# Local development database only. Production runs PostgreSQL as a managed
+# service; credentials there come from the deployment environment, never
+# from this file.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: svi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smartvoiceinput
+      POSTGRES_USER: svi
+      POSTGRES_PASSWORD: ${SVI_DB_PASSWORD:-svi_local_dev}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - svi-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U svi -d smartvoiceinput"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  svi-pgdata:

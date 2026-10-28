@@ -1,0 +1,139 @@
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+.hud-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 250ms ease-in-out;
+}
+.hud-wrap.is-fading { opacity: 0; }
+.hud-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 116px;
+  height: 34px;
+  padding: 4px;
+  border-radius: 99px;
+  background: #000;
+  border: 1px solid rgba(255,255,255,.32);
+  box-shadow: 0 0 20px #0002, 0 8px 16px #0003;
+  transition: width 200ms ease-in-out, height 200ms ease-in-out, background 200ms ease-in-out;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+  overflow: hidden;
+}
+.hud-pill[data-phase="preparing"] { width: 54px; height: 12px; padding: 0; background: #0008; }
+.hud-pill[data-phase="preparing"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  margin-top: -13.5px;
+  width: 27px;
+  height: 27px;
+  background: #f2f1f040;
+  border-radius: 50%;
+  filter: blur(10px);
+  animation: hud-prepare 500ms ease-in-out infinite;
+}
+.hud-pill[data-phase="processing"] { width: 92px; }
+.hud-btn {
+  position: relative;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.hud-cancel { background: #424242; color: #fff; }
+.hud-cancel:hover { background: #535353; }
+.hud-confirm { background: #f2f1f0; color: #111; }
+.hud-confirm:hover { background: #fff; }
+.hud-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 2px;
+  width: 38px;
+  height: 20px;
+  margin: 0 8px;
+}
+.hud-wave span { display: block; width: 2px; border-radius: 2px; background: #fff; transition: height 80ms linear; }
+.hud-progress { position: absolute; inset: 0 auto 0 0; background: #f2f1f040; transition: width 100ms linear; pointer-events: none; }
+.hud-loading {
+  position: relative;
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(90deg, #f2f1f080 20%, #f2f1f0e6 50%, #f2f1f080 80%);
+  background-size: 200% 100%;
+  background-clip: text;
+  animation: hud-shimmer 1200ms linear infinite;
+}
+.hud-slow {
+  flex-shrink: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1d1a1a;
+  box-shadow: 0 4px 8px #1112;
+  color: #f2f1f0;
+  font-size: 12px;
+  line-height: 18px;
+}
+@keyframes hud-prepare { from { transform: translateX(-27px); } to { transform: translateX(54px); } }
+@keyframes hud-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .hud-pill, .hud-wrap, .hud-progress { transition: none; }
+  .hud-loading { animation: none; background: none; color: #f2f1f0; }
+}
+
+/* Accessibility hint above the capsule and the post-result failure card. */
+.hud-hint {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0; max-width: 284px;
+  padding: 5px 6px 5px 10px; border-radius: 8px; background: #1d1a1a; box-shadow: 0 4px 8px #1112;
+  color: #f2f1f0; font-size: 12px; line-height: 18px; pointer-events: auto; white-space: nowrap;
+}
+.hud-card {
+  display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; width: 284px;
+  padding: 10px 10px 10px 12px; border-radius: 12px; background: #000; border: 1px solid rgba(255,255,255,.28);
+  box-shadow: 0 0 20px #0002, 0 8px 16px #0003; color: #f2f1f0; pointer-events: auto;
+}
+.hud-card-text { font-size: 13px; line-height: 18px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.hud-card-actions { display: flex; align-items: center; gap: 6px; }
+.hud-action {
+  height: 24px; padding: 0 10px; border: 0; border-radius: 12px; cursor: pointer;
+  background: #424242; color: #fff; font: inherit; font-size: 12px; line-height: 24px; white-space: nowrap;
+}
+.hud-action:hover { background: #535353; }
+.hud-action.is-primary { background: #f2f1f0; color: #111; }
+.hud-action.is-primary:hover { background: #fff; }
+.hud-action.is-icon { display: flex; align-items: center; justify-content: center; width: 24px; padding: 0; margin-left: auto; }

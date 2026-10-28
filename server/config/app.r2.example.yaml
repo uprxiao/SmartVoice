@@ -1,0 +1,49 @@
+# 以server为cwd；复制到私人配置文件后填本地模型/运行库路径。
+# 不自动下载模型；本例不是已运行部署，也不是20路容量通过证明。
+environment: development
+server:
+  host: 127.0.0.1
+  port: 17863
+database:
+  url_env: SVI_DATABASE_URL
+asr:
+  provider: qwen3_mlx
+  model_id: qwen3-asr-1.7b
+  model_path: /absolute/path/to/qwen3-asr-1.7b-official
+  model_manifest_path: config/qwen3-asr-1.7b.manifest.json
+  # 已安装mlx-qwen3-asr==0.4.4可省略；否则填其安装根（不是包本身）。
+  runtime_path: /absolute/path/to/qwen-runtime
+  language: Chinese
+  stable_partial_required: true
+  execution_slots: 1
+  decode_timeout_ms: 3000
+  finish_timeout_ms: 10000
+llm:
+  provider: openai_compatible
+  model_id: deepseek-flash
+  base_url: https://api.deepseek.com
+  api_key_env: SVI_DEEPSEEK_API_KEY
+  refine_protocol: ds_r2
+  thinking: disabled
+  # JSON用途的静态能力；R2正文不会发送response_format。
+  structured_output: json_object
+  temperature: 0
+  max_output_tokens: 8192
+  call_timeout_ms: 10000
+  automatic_retries_per_attempt: 1
+  fidelity_audit: "off"
+# 完整学习功能沿用已有本机分类模型；不向正文公网端点发送派生修改片段。
+# 独立性能实验若移除此块，必须记录“未启用真实分类”，不得声称学习验收通过。
+classification_llm:
+  provider: ollama
+  model_id: qwen3-coder:30b
+  base_url: http://127.0.0.1:11434
+  refine_protocol: legacy_edits
+  structured_output: json_object
+  max_output_tokens: 256
+  temperature: 0
+  max_inflight: 1
+  call_timeout_ms: 10000
+pipeline:
+  stop_to_result_budget_ms: 30000
+  classification_budget_ms: 10000

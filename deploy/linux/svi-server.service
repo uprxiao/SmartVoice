@@ -1,0 +1,35 @@
+# SmartVoiceInput server (V2, Linux). Sample unit; adjust paths/user to the host.
+# Secrets come only from /etc/smartvoiceinput/svi.env (root:svi 0640, not in Git).
+[Unit]
+Description=SmartVoiceInput server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=svi
+Group=svi
+WorkingDirectory=/opt/smartvoiceinput/server
+Environment=SVI_CONFIG=/etc/smartvoiceinput/app.yaml
+EnvironmentFile=/etc/smartvoiceinput/svi.env
+# Single Uvicorn worker / single replica (V1 deployment §1). Migrations are a
+# separate operator step (deployment §4), never run here.
+# Verified on CentOS Stream 9 (2026-10-28): venv built with python3.12 and
+# `pip install --require-hashes -r requirements.txt` (exported from uv.lock).
+ExecStart=/opt/smartvoiceinput/venv/bin/python -m app.main
+# Alternative where uv is installed: /usr/local/bin/uv run --frozen --no-dev python -m app.main
+KillSignal=SIGTERM
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+# Memory: measured peak RSS 813 MB with 20 active 360 s sessions + 20 retained failed
+# recordings (TC-V2-DEP-06, 2026-10-28); 3G leaves headroom.
+MemoryMax=3G
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/smartvoiceinput
+
+[Install]
+WantedBy=multi-user.target

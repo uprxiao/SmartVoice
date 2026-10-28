@@ -1,0 +1,1 @@
+"""SmartVoiceInput server application."""
