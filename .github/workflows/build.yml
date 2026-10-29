@@ -2,8 +2,16 @@ name: Build installers
 
 on:
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: Build all three installer targets after CI (no Release publication)
+        type: boolean
+        default: false
   workflow_call:
     inputs:
+      full_matrix:
+        type: boolean
+        default: false
       require_mac_signing:
         type: boolean
         default: false
@@ -24,15 +32,15 @@ permissions:
 
 jobs:
   checks:
-    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2'
+    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2' || inputs.full_matrix
     uses: ./.github/workflows/ci.yml
 
   windows-probes:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix
     uses: ./.github/workflows/windows-verify.yml
 
   package:
-    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2'
+    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2' || inputs.full_matrix
     needs: checks
     strategy:
       fail-fast: false

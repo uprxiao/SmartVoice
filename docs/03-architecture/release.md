@@ -9,8 +9,10 @@
 | 文件 | 触发 | 作用 |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `main`、`feature/**`、`release/**`、`0.*` 分支 push；面向 `main` 的 PR；可被复用 | 工作流语法检查、发布规则测试、服务端 pytest、桌面端类型检查/单测/构建、管理后台构建 |
-| `.github/workflows/build.yml` | 手动；被发布流程复用 | 先跑完整 CI，再在 macOS arm64、macOS x64、Windows x64 原生 runner 上构建并验证安装包，上传 Actions artifacts |
+| `.github/workflows/build.yml` | 手动；被发布流程复用 | 完整模式先跑 CI，再在 macOS arm64、macOS x64、Windows x64 原生 runner 上构建并验证安装包，上传 Actions artifacts；开发分支 Windows 专项模式见下 |
 | `.github/workflows/release.yml` | 推送 `v*` tag | 校验附注标签、main 归属、版本进位与 CHANGELOG；调用构建；汇集资产到草稿 Release 后公开 |
+
+`feature/0.0.2` 手动运行 `build.yml` 默认只做 Windows 专项自动验证。需要补齐三个目标安装包的 S4 构建回归时，使用 `gh workflow run build.yml --ref feature/0.0.2 -f full_matrix=true`：仍须完整 CI 通过，在各自原生 runner 构建，保留预览签名限制；只上传 Actions artifacts，不创建或公开 Release，不合并 main 或创建 tag。两种模式结果分别留证，构建通过不替代 S5 真机业务验收。
 
 安装包目标：
 
