@@ -6,6 +6,7 @@ foreach ($f in @('plain','editor')) { foreach ($p in @('selection','caret','empt
 foreach ($k in @('notepad','input','textarea')) { $plannedIds += "TC-WIN-01-product-$k" }
 foreach ($k in @('notepad','input','textarea')) { foreach ($p in @('caret','empty')) { $plannedIds += "TC-WIN-01-product-$k-$p" } }
 foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-06-07-product-$k" }
+foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize')) { $plannedIds += "TC-WIN-13-product-$k" }
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false
@@ -98,21 +99,25 @@ try {
                 if ($position -eq 'empty') { $page += '&empty=1' }
                 $target = Start-Owned $ChromeExe @("--user-data-dir=$(Join-Path $OutputDir "product-$kind-$position")",'--no-first-run','--no-default-browser-check','--disable-sync',"--app=$page")
             }
+            try {
             $preparation = Wait-OwnedWindow $target
             Focus-Target $target.Id
             $null = Native 'probeSelect' @{fixture_pid=$target.Id;start=$start;length=$length}
             $before = Capture-Target $target.Id
-            Assert-Probe ($before.readback.text -ceq $initial -and $before.readback.caret_utf16 -eq $start -and $before.readback.selection_utf16_len -eq $length) 'Product fixture baseline text/selection mismatch'
+            $beforeRaw = Native 'probeReadNow' @{fixture_pid=$target.Id}
             $null = Native 'probeSeedClipboard'
             $text = '中文🙂'
             $expected = $initial.Substring(0,$start) + $text + $initial.Substring($start+$length)
             $result = Product 'insertCurrent' @{insertion_id="actual-$kind-$position";text=$text}
             $after = Capture-Target $target.Id
+            Write-NewJson @{kind=$kind;position=$position;preparation=$preparation;before=$before;before_raw=$beforeRaw;expected=$expected;result=$result;after=$after} (Join-Path $OutputDir "product-raw-$kind-$position.json")
+            Assert-Probe ($before.readback.text -ceq $initial -and $before.readback.caret_utf16 -eq $start -and $before.readback.selection_utf16_len -eq $length) 'Product fixture baseline text/selection mismatch'
             Assert-Probe ($result.status -eq 'inserted' -and $result.effect -eq 'written' -and $result.observable -and $after.readback.text -ceq $expected -and $after.readback.caret_utf16 -eq ($start+$text.Length) -and $after.readback.selection_utf16_len -eq 0) 'Product real target did not exactly match independent expectation'
             $clipboard = Native 'probeClipboardState'
             Assert-Probe ($clipboard.text -ceq 'SVI original clipboard') 'Product real target did not restore Unicode clipboard'
             $null = Product 'release' @{target=$result.target}
             return @{kind=$kind;position=$position;preparation=$preparation;before=$before;expected=$expected;result=$result;independent=$after;clipboard=$clipboard}
+            } finally { Stop-OneOwned $target }
         }
         }
     }
@@ -177,6 +182,7 @@ try {
         Assert-Probe ($watch.ElapsedMilliseconds -lt 3000 -and $clip.text -ceq 'SVI original clipboard') 'External copy blocked by idle product owner'
         return @{external_copy_ms=$watch.ElapsedMilliseconds;clipboard=$clip;scope='independent process, product idle on stdin; UIA-blocked variant remains unexecuted'}
     }
+    . (Join-Path $PSScriptRoot 'product-clipboard-probes.ps1')
 } finally {
     $script:Product.StandardInput.Close()
     if (-not $script:Product.WaitForExit(3000)) { $script:Product.Kill($true); $script:Product.WaitForExit(3000) | Out-Null }

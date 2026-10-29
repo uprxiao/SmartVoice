@@ -50,6 +50,17 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
                     .map(|s| s.to_string())
                     .map_err(|e| e.to_string())
             });
+            let embedded_children = pattern.as_ref().ok().map(|tp| unsafe {
+                tp.DocumentRange()
+                    .and_then(|d| d.GetChildren())
+                    .and_then(|c| c.Length())
+                    .map_err(|e| e.to_string())
+            });
+            let value = unsafe {
+                el.GetCurrentPatternAs::<windows::Win32::UI::Accessibility::IUIAutomationValuePattern>(
+                    windows::Win32::UI::Accessibility::UIA_ValuePatternId)
+                    .and_then(|v| v.CurrentValue()).map(|v| v.to_string()).map_err(|e| e.to_string())
+            };
             let pattern2 =
                 unsafe { el.GetCurrentPatternAs::<IUIAutomationTextPattern2>(UIA_TextPattern2Id) };
             let mut active = windows::core::BOOL(0);
@@ -61,6 +72,7 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             });
             Ok(
                 json!({"info":info,"readback":uia.read_back(&el),"selection_count":selection,"document":document,
+                "value":value,"embedded_children":embedded_children,
                 "caret_pattern2":caret,"caret_active":active.as_bool()}),
             )
         }
@@ -158,25 +170,8 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
         "probeReleaseModifiers" => {
             Ok(json!({"released":keys::release_held_modifiers(),"held":keys::held_modifiers()}))
         }
-        "probeSeedClipboard" => {
-            if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
-                return Err(
-                    "clipboard seeding is restricted to disposable GitHub runner fixtures".into(),
-                );
-            }
-            let text = crate::wide("SVI original clipboard")
-                .iter()
-                .flat_map(|c| c.to_le_bytes())
-                .collect();
-            let seq = crate::clipboard::write_entries(&[crate::clipboard::Entry {
-                format: crate::clipboard::CF_UNICODE,
-                data: text,
-            }])?;
-            Ok(json!({"sequence":seq,"text":crate::clipboard::read_unicode_text()?}))
-        }
-        "probeClipboardState" => Ok(
-            json!({"text":crate::clipboard::read_unicode_text()?,"sequence":crate::clipboard::sequence()}),
-        ),
+        "probeSeedClipboard" => crate::probe_clipboard::seed(request),
+        "probeClipboardState" => crate::probe_clipboard::state(),
         "probeClipboardCycle" => {
             use crate::clipboard as clip;
             if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {

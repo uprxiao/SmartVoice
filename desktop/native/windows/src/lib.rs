@@ -21,6 +21,8 @@ pub mod modifier_watch;
 #[cfg(windows)]
 pub mod paste;
 #[cfg(windows)]
+pub mod probe_clipboard;
+#[cfg(windows)]
 pub mod probe_protocol;
 #[cfg(windows)]
 pub mod product;

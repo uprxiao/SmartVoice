@@ -28,6 +28,8 @@
 
 S4 接续复核：`f4a4520` 后续 CI 中 Admin 测试夹具在源码编译阶段触发 250ms VM 超时，其他任务通过。`87fd620` 将编译准备移到受限调用之前，保留原限制与93项分母，[完整 CI 复验通过](https://github.com/uprxiao/SmartVoice/actions/runs/40900959347)。Admin 又完成9组真实浏览器/隔离 PostgreSQL/HTTP/WS 联调，三种回执与重复请求的计数、筛选、错误恢复及登录退出均核对通过；见[复跑说明](../admin/tests/browser-live-README.md)。模型与 PCM 明确为虚构夹具，剩余 Windows 参数与 S5 真机要求保留。
 
+Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参数运行](https://github.com/uprxiao/SmartVoice/actions/runs/40908758987)为21通过、2个 Chrome 空框失败，另有夹具清理未确认；原失败保留，未放宽全文/光标或清理判据。正在补原始 UIA 数据与 Unicode/HTML/RTF/DIB/文件列表/GDI 类/超限七组剪贴板验证，新增组未通过前不登记完成。
+
 ## 文档
 
 | 目录 | 内容 |

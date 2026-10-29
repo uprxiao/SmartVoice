@@ -44,17 +44,20 @@ function Wait-OwnedWindow([System.Diagnostics.Process]$Process) {
     }
     throw "BLOCKED: owned fixture window was not ready within 20000ms (pid=$($Process.Id)); no paste attempted"
 }
-function Stop-Owned {
-    foreach ($process in $script:Owned) {
+function Stop-OneOwned([System.Diagnostics.Process]$Process) {
         try {
-            if (-not $process.HasExited) { $process.Kill($true) }
-            if (-not $process.WaitForExit(3000)) { throw "owned process exit not confirmed: $($process.Id)" }
-            $script:Cleanup.Add(@{id=$process.Id;exit_confirmed=$true})
+            if (-not $Process.HasExited) { $Process.Kill($true) }
+            if (-not $Process.WaitForExit(3000)) { throw "owned process exit not confirmed: $($Process.Id)" }
+            $script:Cleanup.Add(@{id=$Process.Id;exit_confirmed=$true})
         } catch {
             $script:CleanupConfirmed = $false
-            $script:Cleanup.Add(@{id=$process.Id;exit_confirmed=$false;error=$_.Exception.Message})
-            Write-Warning $_.Exception.Message
+            $script:Cleanup.Add(@{id=$Process.Id;exit_confirmed=$false;error=$_.Exception.Message})
+            throw
         }
+}
+function Stop-Owned {
+    foreach ($process in $script:Owned) {
+        try { Stop-OneOwned $process } catch { Write-Warning $_.Exception.Message }
     }
 }
 
