@@ -67,8 +67,8 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
     } else {
         keys::release_held_modifiers()
     };
-    let seq = match clipboard::set_text_excluded(text, original.seq) {
-        Ok(seq) => seq,
+    let publication = match clipboard::set_text_excluded(text, original.seq) {
+        Ok(publication) => publication,
         Err(error) => {
             // EmptyClipboard may already have happened. Make restoration best effort and report it.
             let restored = error
@@ -80,6 +80,7 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
             );
         }
     };
+    let seq = publication.seq;
     let same_focus = uia.focused().is_ok_and(|e| uia.same_element(&element, &e));
     let fresh = foreground::admit_foreground();
     let same_target = fresh.allowed
@@ -88,11 +89,12 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
                 && f.pid == fixture_pid
                 && f.process_birth_100ns == identity.process_birth_100ns
         });
-    if !same_target || !same_focus {
+    let same_clipboard = clipboard::still_owned(seq).unwrap_or(false);
+    if !same_target || !same_focus || !same_clipboard {
         let restored = clipboard::restore_if_unchanged(&original, seq);
         let _ = crate::modifier_watch::restore_still_physically_held(&neutralised);
         return Ok(
-            json!({"status":"rejected","effect":"none","reason":"target_changed","clipboard_restore":format!("{restored:?}")}),
+            json!({"status":"rejected","effect":"none","reason":if same_clipboard {"target_changed"} else {"clipboard_changed"},"clipboard_restore":format!("{restored:?}")}),
         );
     }
     // No UIA SetValue, Enter, focus restoration, or automatic retry.
@@ -117,6 +119,7 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    let before_restore_seq = clipboard::sequence();
     let restored = clipboard::restore_if_unchanged(&original, seq);
     Ok(json!({
         "status":if matched { "inserted" } else { "unverified" },
@@ -126,6 +129,7 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
         "held_modifiers_after":keys::held_modifiers(),"physical_modifier_restore_verified":false,
         "restored_physically_held_modifiers":restored_modifiers,
         "clipboard_restored":restored.as_ref().ok(),"clipboard_restore_error":restored.err(),
+        "clipboard_publication":publication,"clipboard_seq_before_restore":before_restore_seq,
         "elapsed_ms":started.elapsed().as_secs_f64()*1000.0
     }))
 }

@@ -9,8 +9,8 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
-    GetClipboardFormatNameW, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW,
-    SetClipboardData,
+    GetClipboardFormatNameW, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard,
+    RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
@@ -233,9 +233,41 @@ pub struct WriteError {
     pub owned_seq: Option<u32>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Publication {
+    pub seq: u32,
+    pub seq_before_close: u32,
+}
+
+// A publication is not complete until CloseClipboard. Re-open and establish the
+// published version under a lock, only while our owner window still owns it.
+// A user's intervening EmptyClipboard assigns a different owner: never adopt its version.
+fn published_sequence() -> R<Option<u32>> {
+    open_with_retry()?;
+    let owner = OWNER.with(Clone::clone)?;
+    let result = unsafe { GetClipboardOwner() }
+        .ok()
+        .filter(|current| *current == owner)
+        .map(|_| sequence());
+    unsafe {
+        let _ = CloseClipboard();
+    }
+    Ok(result)
+}
+
+pub fn still_owned(seq: u32) -> R<bool> {
+    open_with_retry()?;
+    let owner = OWNER.with(Clone::clone)?;
+    let result = sequence() == seq && unsafe { GetClipboardOwner() }.ok() == Some(owner);
+    unsafe {
+        let _ = CloseClipboard();
+    }
+    Ok(result)
+}
+
 /// Compare the original version and write under the same lock. Even a partial failure carries
 /// only the version observed while we held the lock, never a later user's clipboard version.
-pub fn set_text_excluded(text: &str, expected_seq: u32) -> Result<u32, WriteError> {
+pub fn set_text_excluded(text: &str, expected_seq: u32) -> Result<Publication, WriteError> {
     open_with_retry().map_err(|message| WriteError {
         message,
         owned_seq: None,
@@ -268,15 +300,31 @@ pub fn set_text_excluded(text: &str, expected_seq: u32) -> Result<u32, WriteErro
         }
         Ok(())
     })();
-    let owned_seq = sequence();
+    let seq_before_close = sequence();
     unsafe {
         let _ = CloseClipboard();
     }
-    result.map_err(|message| WriteError {
+    if !mutated {
+        return Err(WriteError {
+            message: result
+                .err()
+                .unwrap_or_else(|| "clipboard was not written".into()),
+            owned_seq: None,
+        });
+    }
+    let owned_seq = published_sequence().map_err(|message| WriteError {
         message,
-        owned_seq: mutated.then_some(owned_seq),
+        owned_seq: None,
     })?;
-    Ok(owned_seq)
+    result.map_err(|message| WriteError { message, owned_seq })?;
+    let seq = owned_seq.ok_or_else(|| WriteError {
+        message: "clipboard changed before publication confirmed".into(),
+        owned_seq: None,
+    })?;
+    Ok(Publication {
+        seq,
+        seq_before_close,
+    })
 }
 
 /// Write the snapshot back (used for restore and for building test fixtures).

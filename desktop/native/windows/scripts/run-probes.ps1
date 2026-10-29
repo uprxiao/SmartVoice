@@ -16,6 +16,7 @@ $script:CallId = 0
 $script:FixtureCallId = 0
 $script:CleanupConfirmed = $true
 $script:Cleanup = [System.Collections.Generic.List[object]]::new()
+$script:ChromeReadTraces = [System.Collections.Generic.List[object]]::new()
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 . (Join-Path $PSScriptRoot 'probe-files.ps1')
 function Assert-Probe([bool]$Condition, [string]$Message) {
@@ -161,6 +162,9 @@ function Paste-Selection([int]$TargetId, [string]$Text, [string]$Initial, [int]$
     $null = Native 'probeSelect' @{fixture_pid=$TargetId;start=6;length=$Length}
     Start-Sleep -Milliseconds 200
     $before = Capture-Target $TargetId
+    if ($before.info.framework_id -eq 'Chrome') {
+        $script:ChromeReadTraces.Add(@{target_id=$TargetId;attempts=$before.attempt_details;info=$before.info;readback=$before.readback})
+    }
     Assert-Probe ($before.readback.text -ceq $Initial) 'Fixture initial text mismatch'
     Assert-Probe ($before.readback.caret_utf16 -eq 6 -and $before.readback.selection_utf16_len -eq $Length) 'Fixture initial selection mismatch'
     $null = Native 'probeSeedClipboard'
@@ -229,7 +233,9 @@ try {
     }
     $script:ChromeObservations = @()
     Case 'V-03' {
+        $parameters = @()
         foreach ($kind in @('input','textarea')) {
+            try {
             $page = [System.Uri]::new((Join-Path $NativeRoot 'fixtures/chrome.html')).AbsoluteUri + '?kind=' + $kind
             $profile = Join-Path $OutputDir "chrome-$kind"
             $chrome = Start-Owned $ChromeExe @("--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync', "--app=$page")
@@ -238,20 +244,35 @@ try {
             $observation = Paste-Selection $chrome.Id $insert 'BEGIN React END' 5 $expected
             $caret = Paste-Selection $chrome.Id 'TypeScript' $expected 0 "BEGIN TypeScript$insert END"
             $script:ChromeObservations += @{kind=$kind;observation=$observation;caret=$caret;target_id=$chrome.Id}
+            $parameters += @{kind=$kind;status='pass';selection=$observation;caret=$caret}
+            } catch {
+                $parameters += @{kind=$kind;status='fail';error=$_.Exception.Message}
+            }
         }
-        return @{cases=$script:ChromeObservations}
+        Write-NewJson $parameters (Join-Path $OutputDir 'V-03-parameters.json')
+        Assert-Probe (@($parameters | Where-Object { $_.status -ne 'pass' }).Count -eq 0) 'Chrome parameter group failed; inspect V-03-parameters.json and native calls'
+        return @{cases=$parameters}
     }
     Case 'V-04' {
         $field = Fixture 'field' @{field='editor'}
+        Focus-Target $field.pid
         Start-Sleep -Milliseconds 200
         $null = Native 'probeSeedClipboard'
-        $hold = Native 'probeHoldModifiers' @{fixture_pid=$field.pid}
-        $result = Native 'probePaste' @{fixture_pid=$field.pid;text='中文🙂'}
+        try {
+            $hold = Native 'probeHoldModifiers' @{fixture_pid=$field.pid}
+            $result = Native 'probePaste' @{fixture_pid=$field.pid;text='中文🙂'}
+        } finally { $released = Native 'probeReleaseModifiers' }
         $actual = Fixture 'fieldState'
         Assert-Probe ($result.status -eq 'inserted') 'Held-modifier paste was not verified'
         Assert-Probe ($actual.chords.Count -eq 1 -and $actual.chords[0].ctrl -and -not $actual.chords[0].shift -and -not $actual.chords[0].alt -and -not $actual.chords[0].meta) 'Target did not receive exactly one plain Ctrl+V'
         Assert-Probe ($result.held_modifiers_after.Count -eq 0) 'Injected modifier remains down'
         return @{held=$hold;result=$result;target=$actual;case_status='partial';reason='injected residue checked; physical hold/release restoration needs manual Windows evidence'}
+    }
+    Case 'V-06' {
+        $cycle = Native 'probeClipboardCycle'
+        Assert-Probe ($cycle.restored -and $cycle.restored_text -ceq 'SVI original clipboard') 'Text clipboard restoration did not preserve original'
+        Assert-Probe (-not $cycle.replaced_restored -and $cycle.replaced_text -ceq 'SVI intervening clipboard') 'Intervening clipboard version was overwritten'
+        return @{cycle=$cycle;case_status='partial';remaining='HTML/RTF/image/file-list fidelity still requires separate verification'}
     }
     Case 'V-07' {
         $medium = Native 'describeWindow' @{fixture_pid=$notepad.Id}
@@ -266,6 +287,7 @@ try {
         $observations = @()
         foreach ($fieldName in @('password','readonly','disabled')) {
             $field = Fixture 'field' @{field=$fieldName}
+            Focus-Target $field.pid
             Start-Sleep -Milliseconds 200
             $info = Native 'inspectPoint' @{fixture_pid=$field.pid;x=$field.point.x;y=$field.point.y}
             $expected = @{password='password';readonly='read_only';disabled='disabled'}[$fieldName]
@@ -280,6 +302,7 @@ try {
             $observations += @{field=$fieldName;info=$info;denial=$denial}
         }
         $canvas = Fixture 'field' @{field='unreadable'}
+        Focus-Target $canvas.pid
         Start-Sleep -Milliseconds 200
         $null = Native 'probeSeedClipboard'
         $unknown = Native 'probePaste' @{fixture_pid=$canvas.pid;text='中文🙂'}
@@ -289,10 +312,10 @@ try {
         return @{observations=$observations;unknown=$unknown;independent_canvas=$canvasState}
     }
     Case 'V-09' {
-        Assert-Probe ($script:ChromeObservations.Count -eq 2) 'BLOCKED: Chrome samples did not finish'
-        $traces = @($script:ChromeObservations | ForEach-Object { @{kind=$_.kind;attempts=$_.observation.before.attempt_details} })
+        Assert-Probe ($script:ChromeReadTraces.Count -gt 0) 'BLOCKED: Chrome reads did not execute'
+        $traces = @($script:ChromeReadTraces)
         $emptyThenReadable = @($traces | Where-Object {
-            $_.attempts.Count -gt 1 -and $_.attempts[0].text_utf16_len -eq 0 -and $_.attempts[-1].text_utf16_len -gt 0 -and $_.attempts[-1].has_caret
+            $_.attempts.Count -gt 1 -and ($null -eq $_.attempts[0].text_utf16_len -or $_.attempts[0].text_utf16_len -eq 0) -and $_.attempts[-1].text_utf16_len -gt 0 -and $_.attempts[-1].has_caret
         })
         if ($emptyThenReadable.Count -gt 0 -and $script:Cases['V-08'].status -eq 'pass') {
             return @{traces=$traces;real_initial_empty_observed=$true;unreadable_fallback='V-08 custom input actual paste remains unverified'}
@@ -303,8 +326,8 @@ try {
         $observations = @()
         Focus-Target $notepad.Id
         $observations += @{kind='classic';capture=(Capture-Target $notepad.Id)}
-        Assert-Probe ($script:ChromeObservations.Count -gt 0) 'BLOCKED: no Chrome target'
-        $chromeTarget = $script:ChromeObservations[0].target_id
+        Assert-Probe ($script:ChromeReadTraces.Count -gt 0) 'BLOCKED: no Chrome target'
+        $chromeTarget = $script:ChromeReadTraces[0].target_id
         Focus-Target $chromeTarget
         $observations += @{kind='chrome';capture=(Capture-Target $chromeTarget)}
         $codeFile = Join-Path $OutputDir 'code-fixture.txt'

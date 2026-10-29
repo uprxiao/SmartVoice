@@ -88,6 +88,7 @@ async function command(request) {
         const el=document.getElementById(${JSON.stringify(id)});
         if('value' in el && !el.readOnly && !el.disabled && el.type!=='password') el.value='BEGIN React END';
         window.pasteChords=[]; window.canvasValue=''; window.canvasPasteCount=0; el.focus();
+        el.scrollIntoView({block:'center'});
         if(el.setSelectionRange && !el.disabled) el.setSelectionRange(6,11);
         const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2};
       })()`);

@@ -7,7 +7,7 @@ pub use crate::verification::Readback;
 use crate::{ctx, R};
 use serde::Serialize;
 use windows::core::BSTR;
-use windows::Win32::Foundation::{POINT, RECT};
+use windows::Win32::Foundation::{LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, SAFEARRAY,
@@ -21,8 +21,10 @@ use windows::Win32::UI::Accessibility::{
     IUIAutomationTextRange, IUIAutomationValuePattern, TextPatternRangeEndpoint_End,
     TextPatternRangeEndpoint_Start, TextUnit_Character, UIA_TextPatternId, UIA_ValuePatternId,
 };
+use windows::Win32::UI::Controls::EM_GETSEL;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO,
+    GetCursorPos, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
+    SendMessageTimeoutW, GUITHREADINFO, SMTO_ABORTIFHUNG, SMTO_ERRORONEXIT,
 };
 
 pub struct Uia {
@@ -248,11 +250,20 @@ impl Uia {
                 .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
                 .map_err(ctx("no text/value pattern"))?;
             let text = vp.CurrentValue().map_err(ctx("CurrentValue"))?.to_string();
+            // Classic Win32 Edit exposes only ValuePattern on the hosted image. Read
+            // selection independently with the documented read-only system message;
+            // never infer a caret from text length or set the target's value/selection.
+            let selection = classic_selection(el, text.encode_utf16().count());
             Ok(Readback {
-                source: "value_pattern".into(),
+                source: if selection.is_some() {
+                    "value_pattern+em_getsel"
+                } else {
+                    "value_pattern"
+                }
+                .into(),
                 text,
-                caret_utf16: None,
-                selection_utf16_len: None,
+                caret_utf16: selection.map(|(start, _)| start),
+                selection_utf16_len: selection.map(|(start, end)| end - start),
             })
         }
     }
@@ -351,6 +362,48 @@ impl Uia {
                 None => fail("empty rectangles even after expanding one character"),
             }
         }
+    }
+}
+
+fn classic_selection(el: &IUIAutomationElement, text_units: usize) -> Option<(usize, usize)> {
+    unsafe {
+        let hwnd = el.CurrentNativeWindowHandle().ok()?;
+        if hwnd.0.is_null() || crate::foreground::class_of(hwnd) != "Edit" {
+            return None;
+        }
+        let mut pid = 0;
+        let tid = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        let foreground = crate::foreground::foreground()?;
+        if tid == 0 || pid != foreground.pid || el.CurrentProcessId().ok()? != pid as i32 {
+            return None;
+        }
+        let mut gui = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        GetGUIThreadInfo(tid, &mut gui).ok()?;
+        if gui.hwndFocus != hwnd {
+            return None;
+        }
+        let mut start = u32::MAX;
+        let mut end = u32::MAX;
+        let mut result = 0usize;
+        // EM_GETSEL < WM_USER: Windows marshals these DWORD pointers across processes.
+        if SendMessageTimeoutW(
+            hwnd,
+            EM_GETSEL,
+            WPARAM(&mut start as *mut u32 as usize),
+            LPARAM(&mut end as *mut u32 as isize),
+            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
+            150,
+            Some(&mut result),
+        )
+        .0 == 0
+        {
+            return None;
+        }
+        let (start, end) = (start as usize, end as usize);
+        (start <= end && end <= text_units).then_some((start, end))
     }
 }
 

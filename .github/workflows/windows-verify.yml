@@ -31,7 +31,19 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
+      - name: Restore Rust probe build cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/svi-rust-target
+          key: ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-
       - name: Check Rust before unit tests
+        id: native-build
         shell: pwsh
         run: |
           cargo fmt --manifest-path desktop/native/windows/Cargo.toml --check
@@ -42,6 +54,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --locked --release --bins --manifest-path desktop/native/windows/Cargo.toml
           exit $LASTEXITCODE
+      - name: Save compiled probe dependencies
+        if: always() && steps.native-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/svi-rust-target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.27.0

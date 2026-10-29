@@ -36,7 +36,11 @@
 
 报告对阶段内部分覆盖仍记 `partial`：V-04 的注入修饰键对照不能代替物理按住/释放；V-09 若本轮未观察到 Chromium 首次空读，保留实际轨迹，不把已预热的读回冒充恢复验证。V-02/03 分别安排光标插入与选区替换；V-08 安排受保护字段拒绝和不可读控件的一次真实粘贴降级。即使部分探针成功，汇总也不会据此宣布 9 项阻断验证通过。阻断项的未完成参数不能移到 S4 后补。
 
+“首次空读”包括尚未提供 Text/ValuePattern（本次无正文可读）与返回空正文两类，轨迹保留原值 `null`/`0`，不能相互改写。V-09 独立检查这些真实初读轨迹及后续精确读回，不依赖同一 Chrome 的剪贴板恢复项是否成功；永久不可读控件仍须验证一次实际粘贴后保持 `unverified`。经典 Win32 Edit 仅有 ValuePattern 时，正文仍经 UIA 读回，选区用同一焦点控件的只读 `EM_GETSEL` 补足；缺选区不能假设光标在末尾。开发前 V-04 的托管/物理层级冲突暂记 `docs/README.md` 待决，未擅自放行。
+
 实现核查依据：[Microsoft OpenClipboard 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-openclipboard)说明 NULL 所属窗口与后续写入的限制；[GitHub 手动运行工作流文档](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)说明默认分支注册及选择分支运行的要求。现有决策稿的自动复制表述已按同稿 Q7 统一为用户手动“复制结果”，不新增产品决策。
+
+补充核查：[CreateProcessWithTokenW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithtokenw)规定 NULL 环境从用户配置创建，探针须显式传入 Unicode 环境且不输出环境值；[EM_GETSEL](https://learn.microsoft.com/en-us/windows/win32/controls/em-getsel)提供完整 32 位选区，[SendMessageTimeoutW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw)规定系统消息的跨进程参数封送及超时；[GetClipboardOwner](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclipboardowner)与[剪贴板序号](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclipboardsequencenumber)用于确认本轮发布后版本与恢复资格。
 
 ## 继续工作的门禁
 

@@ -128,6 +128,38 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
         "probeClipboardState" => Ok(
             json!({"text":crate::clipboard::read_unicode_text()?,"sequence":crate::clipboard::sequence()}),
         ),
+        "probeClipboardCycle" => {
+            use crate::clipboard as clip;
+            if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
+                return Err("clipboard cycle is restricted to the disposable CI fixture".into());
+            }
+            let entry = |text: &str| clip::Entry {
+                format: clip::CF_UNICODE,
+                data: crate::wide(text)
+                    .iter()
+                    .flat_map(|unit| unit.to_le_bytes())
+                    .collect(),
+            };
+            clip::write_entries(&[entry("SVI original clipboard")])?;
+            let original = clip::snapshot()?;
+            let write = clip::set_text_excluded("SVI publication fixture", original.seq)
+                .map_err(|e| e.message)?;
+            let current_seq = clip::sequence();
+            let restored = clip::restore_if_unchanged(&original, write.seq)?;
+            let restored_text = clip::read_unicode_text()?;
+            let baseline = clip::snapshot()?;
+            let second = clip::set_text_excluded("SVI second publication", baseline.seq)
+                .map_err(|e| e.message)?;
+            // Same API, new version: even a change under our own window must not be overwritten.
+            clip::write_entries(&[entry("SVI intervening clipboard")])?;
+            let replaced_seq = clip::sequence();
+            let replaced_restored = clip::restore_if_unchanged(&baseline, second.seq)?;
+            let replaced_text = clip::read_unicode_text()?;
+            Ok(
+                json!({"write":write,"current_seq":current_seq,"restored":restored,"restored_text":restored_text,
+                "second":second,"replaced_seq":replaced_seq,"replaced_restored":replaced_restored,"replaced_text":replaced_text}),
+            )
+        }
         "probeHotkeys" => Ok(
             json!({"probes":hotkey::standard_combos().iter().map(|c| hotkey::probe(c, false)).collect::<Vec<_>>()}),
         ),
