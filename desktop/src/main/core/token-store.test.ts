@@ -36,11 +36,14 @@ describe('credential storage failure boundaries (AUTH-09/15)', () => {
     const path = directory(); writeFileSync(join(path, 'auth.bin'), JSON.stringify({ version: 1, access: 'unsafe', refresh: 'unsafe' }));
     expect(new TokenStore(cipher(true), path).load()).toBeNull();
   });
-  it('persists ciphertext with private permissions and decrypts it on restoration', () => {
+  it('persists ciphertext, uses private POSIX mode where available, and decrypts it on restoration', () => {
     const path = directory(); new TokenStore(cipher(true), path).set('access-canary', 'refresh-canary');
     const raw = readFileSync(join(path, 'auth.bin')).toString();
     expect(raw).not.toContain('access-canary'); expect(raw).not.toContain('refresh-canary');
-    expect(statSync(join(path, 'auth.bin')).mode & 0o777).toBe(0o600);
+    // Node cannot express owner/group/other permissions on Windows. DPAPI and
+    // the installed profile ACL remain actual Windows acceptance requirements.
+    if (process.platform === 'win32') expect(statSync(join(path, 'auth.bin')).mode & 0o200).not.toBe(0);
+    else expect(statSync(join(path, 'auth.bin')).mode & 0o777).toBe(0o600);
     expect(new TokenStore(cipher(true), path).load()).toEqual({ access: 'access-canary', refresh: 'refresh-canary' });
   });
   it('encryption exceptions never cause plaintext persistence', () => {

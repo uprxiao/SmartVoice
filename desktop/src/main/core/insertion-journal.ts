@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { syncPublishedFile } from '../../../native/durable-file';
 
 export type InsertionPhase = 'started' | 'inserted' | 'failed' | 'unverified';
 export interface InsertionIntent {
@@ -90,7 +91,8 @@ export class InsertionJournal {
     } finally {
       closeSync(fd);
     }
-    this.flushDirectory(directory);
+    syncPublishedFile(directory, file);
+    this.confirmSaved(mark);
     return { created: true, mark };
   }
 
@@ -132,15 +134,18 @@ export class InsertionJournal {
     try {
       fd = openSync(temporary, 'wx', 0o600);
       writeFileSync(fd, JSON.stringify(mark)); fsyncSync(fd); closeSync(fd); fd = null;
-      renameSync(temporary, file); this.flushDirectory(this.directory(mark.user_id));
+      renameSync(temporary, file); syncPublishedFile(this.directory(mark.user_id), file);
+      this.confirmSaved(mark);
     } finally {
       if (fd !== null) closeSync(fd);
       if (existsSync(temporary)) rmSync(temporary, { force: true });
     }
     return mark;
   }
-  private flushDirectory(directory: string): void {
-    const fd = openSync(directory, 'r');
-    try { fsyncSync(fd); } finally { closeSync(fd); }
+  private confirmSaved(mark: InsertionMark): void {
+    const actual = this.read(mark.user_id, mark.insertion_id);
+    if (!actual || Object.keys(mark).some(key => actual[key as keyof InsertionMark] !== mark[key as keyof InsertionMark])) {
+      throw new JournalUncertainError('本机输入执行标记读回失败，未重复执行');
+    }
   }
 }

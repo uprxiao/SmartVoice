@@ -1,7 +1,7 @@
 // L1: render the actual reviewed UI with frozen local RPC data. No OS/permission claim.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppInfo } from '@shared/types';
@@ -16,6 +16,7 @@ vi.mock('../stores',()=>({stores:{
 }}));
 vi.mock('../lib/ipc',()=>({rpc:{app:{}}}));
 import { SettingsView } from './SettingsView';
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(()=>{
   vi.stubGlobal('localStorage',{getItem:()=>null});f.nullReads=0;f.locale='zh-CN';f.section='settings';
   f.info={version:'0.0.2',electron:'42',platform:'win32',accessibilityTrusted:false,accessibilitySupported:false,

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 // This is our own app's registered-key port state, not a model of macOS or
 // a third-party conflict detector. No Electron process or OS key event exists.
@@ -45,7 +45,7 @@ vi.mock('node:fs', async (importOriginal) => {
     writeFileSync(...args: Parameters<typeof actual.writeFileSync>) {
       const [path, , options] = args;
       if (fixture.failNextWriteAfterPartial && typeof path === 'string'
-          && path.startsWith(`${fixture.directory}/`)) {
+          && path.startsWith(`${fixture.directory}${sep}`)) {
         fixture.failNextWriteAfterPartial = false;
         // A real, short write to this test-owned path occurs before failure.
         // With the old implementation this truncates settings.json. With the
@@ -76,8 +76,12 @@ let file: string;
 let original: Buffer;
 let service: ShortcutService;
 let callback: ReturnType<typeof vi.fn<() => void>>;
+const hostPlatform = process.platform;
+const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
 beforeEach(() => {
+  // This historical suite exercises the Mac reserved table on either host OS.
+  Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'darwin' });
   fixture.directory = mkdtempSync(join(tmpdir(), 'svi-shortcut-owned-unit-'));
   fixture.registered.clear();
   fixture.registrationAttempts.length = 0;
@@ -96,6 +100,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   service?.dispose();
+  Object.defineProperty(process, 'platform', platformDescriptor);
   // Only this test's fresh directory is removed; no real application profile.
   if (fixture.directory) rmSync(fixture.directory, { recursive: true, force: true });
   fixture.directory = '';
@@ -153,7 +158,9 @@ describe('ShortcutService update keeps its registered key and durable settings c
     expect([...fixture.registered.keys()]).toEqual([K2]);
     expect(fixture.registered.get(K2)).toBe(callback);
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ shortcut: K2 });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows mode exposes read/write flags, not POSIX owner/group/other ACLs.
+    if (hostPlatform === 'win32') expect(statSync(file).mode & 0o200).not.toBe(0);
+    else expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(readdirSync(fixture.directory)).toEqual(['settings.json']);
     service.dispose();
     expect(fixture.registered.size).toBe(0);

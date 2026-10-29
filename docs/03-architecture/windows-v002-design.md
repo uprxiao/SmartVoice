@@ -47,6 +47,8 @@ Windows 的 `trusted:true` 只兼容现有“可尝试原生输入”调用链�
 
 同一 helper 内登记 insertion_id：第一次执行前占位；重复 id 不再次写入，曾写/不确定则返回 unverified/unknown，曾明确零写入则 failed/none。最多保留 10000 个仅含身份与 effect 的标记，达到上限拒绝新写入，不通过逐出旧 id 允许重放。跨 helper 重启仍由 Main 的持久化执行日志与服务端 claim 保护。目标缓存上限 64，逐出只使旧显式目标失效；不跨重启恢复句柄，不落盘原文。
 
+S4 Windows 实测发现 POSIX 目录 fd 的 fsync 返回 EPERM。执行日志仍先同步内容；原子 rename 后 Windows 以可写句柄再次同步最终文件并读回标记，POSIX 继续同步目录。任何同步/读回错误继续阻止粘贴，不吞错误。服务端 claim 与已存在/未知标记仍独立禁止再次写入，不以本机文件缺失作为重放资格。依据 [FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers) 的可写文件句柄要求；Windows 不用 POSIX mode 位冒称已验 NTFS ACL，DPAPI/实际安装账号目录权限保留真机验收。
+
 ## 一次粘贴流程
 
 1. Main 核当前账号/会话/result/hash/review，再 claim 并持久化 started；这套既有执行日志不能由 Windows 分支绕过。Windows 不向 helper 传 token、账号凭据或输入框原有全文。
