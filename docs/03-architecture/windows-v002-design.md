@@ -111,9 +111,9 @@ Windows `correctionObservationSupported=false`；Main 每会话传 `learning_ena
 
 首次加密成功只证明取得密文，不能证明加密配置已持久化。独立对照确认同步/异步 safeStorage 及公开 DOMStorage flush 后立即强退均无法恢复，独立正常退出预热后同组可恢复；产品强退恢复仍须另验。
 
-Windows 持有单实例锁的 Main 在初始脚本中同步启动本应用的固定内部初始化模式，必须早于 `app.ready`。子进程使用相同 userData/sessionData，仅在 ready 后调用公开 safeStorage 加密固定非账号 canary，再正常退出，让 Electron 提交自己的配置。父 Main 等待真实退出0，并核对唯一应答的 schema 和两目录身份摘要后，才继续初始化 TokenStore。父 Main 保持原 PID 与单实例锁；内部子进程不申请锁，不创建窗口/托盘/RPC/native helper，不加载账号、不发 HTTP，也不继承调试端口或模型/服务凭据。开发壳显式传入应用目录；安装版直接使用本应用 exe，所有参数均为数组，不经过 shell。
+Windows 持有单实例锁的 Main 在初始脚本中同步启动本应用的固定内部初始化模式，必须早于 `app.ready`。子进程使用相同 userData/sessionData，仅在 ready 后调用公开 safeStorage 加密固定非账号 canary，再正常退出，让 Electron 提交自己的配置。父 Main 等待真实退出0，核对唯一应答的 schema、两目录身份摘要及规范编码的非账号密文 challenge；自身 ready 后再独立解密为固定 canary，确认实际使用同一份已持久化的密钥，才允许 TokenStore 持久化。不能仅以子进程退出0推断配置写盘成功。challenge 只在内部管道/内存传递，不记录或落文件，验证后清空其 Buffer。父 Main 保持原 PID 与单实例锁；内部子进程不申请锁，不创建窗口/托盘/RPC/native helper，不加载账号、不发 HTTP，也不继承调试端口或模型/服务凭据。开发壳显式传入应用目录；安装版直接使用本应用 exe，所有参数均为数组，不经过 shell。
 
-子进程隐藏启动、输出上限8KiB、准备期限8000ms；失败、超时、被终止、应答缺失/重复或目录不符均使用既有“仅本次内存登录”分支，不将当前密文冒称可恢复，不采用明文或新密钥 provider。Mac 不执行此初始化，也不触碰其 Keychain。实现集中 [Windows 存储初始化](../../desktop/native/windows/credential-bootstrap.ts)，不读写 Chromium 私有密钥格式，不通过延迟强退测试来放宽判据。
+子进程隐藏启动、输出上限8KiB、准备期限8000ms；失败、超时、被终止、应答缺失/重复、目录不符、父进程无法解密或明文不符均使用既有“仅本次内存登录”分支，不将当前密文冒称可恢复，不采用明文或新密钥 provider。Mac 不执行此初始化，也不触碰其 Keychain。实现集中 [Windows 存储初始化](../../desktop/native/windows/credential-bootstrap.ts)，不读写 Chromium 私有密钥格式，不通过延迟强退测试来放宽判据。
 
 时序依据为锁定 [Electron 主脚本加载后才初始化全局配置](https://github.com/electron/electron/blob/v42.11.15/shell/browser/electron_browser_main_parts.cc#L290-L311)和[正常退出提交配置](https://github.com/electron/electron/blob/v42.11.15/shell/browser/browser_process_impl.cc#L182-L187)。必须保留初始脚本中的同步等待；移入 ready 回调会让父进程先取得未持久化的不同密钥。实际首次注册后立即强退、后台恢复、第二实例、包启动和全部失败分支按 TC-WIN-27/33 回归；候选实验不替代正式产品通过。
 

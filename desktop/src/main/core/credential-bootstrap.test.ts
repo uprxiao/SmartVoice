@@ -8,7 +8,7 @@ const port = vi.hoisted(() => ({
   spawn: vi.fn(),
   app: {
     isPackaged: false,
-    getPath: vi.fn(), getAppPath: vi.fn(), whenReady: vi.fn(), quit: vi.fn(), exit: vi.fn(),
+    getPath: vi.fn(), getAppPath: vi.fn(), isReady: vi.fn(), whenReady: vi.fn(), quit: vi.fn(), exit: vi.fn(),
   },
   cipher: { isEncryptionAvailable: vi.fn(), encryptString: vi.fn(), decryptString: vi.fn() },
 }));
@@ -21,7 +21,7 @@ const USER = 'C:\\Fictional profiles\\SmartVoiceInput';
 const SESSION = USER;
 const identity = (value: string) => createHash('sha256').update(win32.normalize(value).toLowerCase()).digest('hex');
 const ack = (user = USER, session = SESSION) => 'SVI_CREDENTIAL_STORAGE_V1 ' + JSON.stringify({
-  schema: 'svi-credential-storage-v1', user_data: identity(user), session_data: identity(session),
+  schema: 'svi-credential-storage-v1', user_data: identity(user), session_data: identity(session), encrypted_canary: Buffer.from('encrypted fictional canary').toString('base64'),
 }) + '\n';
 const exited = (stdout = ack()) => ({ status: 0, signal: null, stdout: Buffer.from(stdout) });
 
@@ -31,8 +31,10 @@ beforeEach(() => {
   port.app.getPath.mockImplementation((name: string) => name === 'sessionData' ? SESSION : USER);
   port.app.getAppPath.mockReturnValue('C:\\Fictional source\\desktop');
   port.app.whenReady.mockResolvedValue(undefined);
+  port.app.isReady.mockReturnValue(true);
   port.cipher.isEncryptionAvailable.mockReturnValue(true);
   port.cipher.encryptString.mockReturnValue(Buffer.from('encrypted fictional canary'));
+  port.cipher.decryptString.mockReturnValue('SmartVoiceInput credential storage initialization');
   port.spawn.mockReturnValue(exited());
 });
 afterEach(() => { vi.unstubAllEnvs(); });
@@ -60,6 +62,27 @@ describe('Windows credential initialization before Main profile creation', () =>
     expect(prepareCredentialStorage('win32')).toBe(true);
     expect(port.spawn.mock.calls[0][1]).toEqual(['--svi-credential-storage-bootstrap', `--user-data-dir=${USER}`]);
     expect(port.app.getAppPath).not.toHaveBeenCalled();
+  });
+
+  it('independently decrypts the completed child challenge before enabling persistence', () => {
+    expect(prepareCredentialStorage('win32')).toBe(true);
+    expect(port.cipher.decryptString).not.toHaveBeenCalled();
+    expect(credentialCipher(true, 'win32')).toBeUndefined();
+    const consumed = port.cipher.decryptString.mock.calls[0][0] as Buffer;
+    expect(consumed.every(byte => byte === 0)).toBe(true);
+    expect(credentialCipher(true, 'win32')).toBeUndefined();
+    expect(port.cipher.decryptString).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['different-key', 'wrong-plaintext', 'unavailable', 'parent-not-ready'])('does not mistake child exit0 for durable storage on %s', fault => {
+    expect(prepareCredentialStorage('win32')).toBe(true);
+    if (fault === 'different-key') port.cipher.decryptString.mockImplementation(() => { throw new Error('fictional key not persisted'); });
+    if (fault === 'wrong-plaintext') port.cipher.decryptString.mockReturnValue('different fictional challenge');
+    if (fault === 'unavailable') port.cipher.isEncryptionAvailable.mockReturnValue(false);
+    if (fault === 'parent-not-ready') port.app.isReady.mockReturnValue(false);
+    expect(credentialCipher(true, 'win32')!.isEncryptionAvailable()).toBe(false);
+    expect(credentialCipher(true, 'win32')!.isEncryptionAvailable()).toBe(false);
+    if (fault === 'parent-not-ready') expect(port.cipher.decryptString).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -66,7 +66,7 @@
 |---|---|---|
 | TC-WIN-31 / WIN-10 | L1+L2/L3；100/150/200%、负坐标、多屏输入在屏 A 鼠标在 B；经典caret/UIA range/element/window/mouse 逐层降级 | physical→DIP 一次转换，HUD 在输入所在屏 workArea；有输入位置不优先鼠标，逐层依据可追踪；缺屏/缩放参数 not_run，不以单屏替代 |
 | TC-WIN-32 / WIN-10 | L1+L2/L3；显示/移动/隐藏15次采前台PID/焦点；定位迟到、取消、开启下一次录音 | HUD showInactive/非激活，不改变当前目标；停止/取消后迟到 bounds 不复活，新代际不混入旧坐标 |
-| TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件；首次凭据子进程异常退出/超时/应答缺失或其他profile参数 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录。初始化子进程须正常退出且目录身份相符才允许持久化；异常仅内存登录，无明文fallback/递归启动/额外主窗；Mac不走此流程 |
+| TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件；首次凭据子进程异常退出/超时/应答缺失或其他profile参数 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录。初始化子进程须正常退出、目录身份相符且父进程独立解密canary匹配才允许持久化；另测子进程退出0但配置未持久化/密钥不同；异常仅内存登录，无明文fallback/递归启动/额外主窗；Mac不走此流程 |
 | TC-WIN-34 / WIN-01、11 | L1+真 PostgreSQL HTTP；同结果重复 claim/receipt、inserted/failed/unverified、跨账号访问；源码冻结 | API/数据库读回状态和 effect 一致；tenant 拒绝；重复不重复统计/执行，unknown 不计 inserted；不新增 Windows 服务端枚举/表 |
 | TC-WIN-35 / WIN-06、11 | Admin 构建/类型+Mock错误/空态→接 TC-WIN-34 同服务数据库 | 后台实际状态/计数等于手算与数据库；普通用户无管理员访问；不把 failed/unverified 美化为成功，HTTP失败不显示假数据 |
 | TC-WIN-36 / WIN-05、11 | **L3**；正式安装包→HTTPS/WSS登录→真实麦克风/ASR/LLM→Notepad及Chrome输入；真实取消/网络失败 | 完整音频/模型/整理/插入读回与历史回执闭环；CA链/IP/有效期校验保留、safeStorage token 不暴露；遵守既有质量/性能/隐私，不以 Mock 或探针结果替代 |

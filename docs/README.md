@@ -50,7 +50,7 @@ Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参�
 
 ## 待决问题
 
-- Windows 首次安全存储的强退一致性仍待产品复验：[五组独立对照](https://github.com/uprxiao/SmartVoice/actions/runs/40959839233)确认公开 DOMStorage flush 与异步 API 均不能解决首次立即强退；独立正常退出预热后可恢复。已按[S2初始化时序](03-architecture/windows-v002-design.md#windows-首次凭据持久化)补主进程早期初始化和失败时仅内存登录，不读写私有密钥格式。源码类型、构建与711项Desktop回归通过；实际客户端的立即强退/后台恢复/第二实例尚待原判据复验，门禁未放行。独立Admin和历史输入不替代原恢复/注销。
+- Windows 首次安全存储的强退一致性仍待产品复验：[五组独立对照](https://github.com/uprxiao/SmartVoice/actions/runs/40959839233)确认公开 DOMStorage flush 与异步 API 均不能解决首次立即强退；独立正常退出预热后可恢复。已按[S2初始化时序](03-architecture/windows-v002-design.md#windows-首次凭据持久化)补主进程早期初始化和失败时仅内存登录，不读写私有密钥格式。源码类型、构建与716项Desktop回归通过（含父进程独立解密确认）；实际客户端的立即强退/后台恢复/第二实例尚待原判据复验，门禁未放行。独立Admin和历史输入不替代原恢复/注销。
 
 - Windows WIN-12：已提出是否追加旧版修改学习的澄清，当前按本人原先确认的“observe 后移”范围继续，不追加 Windows 修改观察，不把未回复当成新的批准。若本人选择扩围，先回到 S1/S2/S3 补齐再实现；`release` 则按实码保留为既有目标生命周期清理。见 [S1 补充](02-prd/windows-v002-requirements.md)。
 
