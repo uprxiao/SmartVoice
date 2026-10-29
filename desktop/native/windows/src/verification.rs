@@ -15,7 +15,7 @@ pub struct Expected {
     pub caret_utf16: usize,
 }
 
-/// Chromium represents an empty atomic edit as an object navigation character.
+/// Chromium may expose an empty atomic edit as an object character or its accessible name.
 /// Normalize only when independent ValuePattern, selection and embedded-child facts agree.
 /// Literal U+FFFC, rich embedded objects, missing selection and any other provider remain intact.
 pub fn normalize_empty_edit(
@@ -23,11 +23,13 @@ pub fn normalize_empty_edit(
     chromium_edit: bool,
     value: Option<&str>,
     no_embedded_children: bool,
+    accessible_name: Option<&str>,
 ) {
     if chromium_edit
         && value == Some("")
         && no_embedded_children
-        && read.text == "\u{fffc}"
+        && (read.text == "\u{fffc}"
+            || accessible_name.is_some_and(|name| !name.is_empty() && read.text == name))
         && read.caret_utf16 == Some(0)
         && read.selection_utf16_len == Some(0)
     {
@@ -107,7 +109,7 @@ mod tests {
     #[test]
     fn chromium_navigation_placeholder_needs_independent_empty_value_and_zero_selection() {
         let mut empty = read("\u{fffc}", Some(0), Some(0));
-        normalize_empty_edit(&mut empty, true, Some(""), true);
+        normalize_empty_edit(&mut empty, true, Some(""), true, None);
         assert_eq!(
             expected_after(&empty, "中文🙂").unwrap(),
             Expected {
@@ -124,8 +126,36 @@ mod tests {
             (true, Some(""), true, Some(0), Some(1)),
         ] {
             let mut r = read("\u{fffc}", caret, len);
-            normalize_empty_edit(&mut r, is_edit, value, children);
+            normalize_empty_edit(&mut r, is_edit, value, children, None);
             assert_eq!(r.text, "\u{fffc}");
+        }
+    }
+    #[test]
+    fn chromium_empty_accessible_name_is_not_document_content() {
+        let label = "Fictional accessible label";
+        let mut empty = read(label, Some(0), Some(0));
+        normalize_empty_edit(&mut empty, true, Some(""), true, Some(label));
+        assert_eq!(expected_after(&empty, "中文🙂").unwrap().text, "中文🙂");
+        for (is_edit, value, no_children, name, caret, len) in [
+            (true, Some(label), true, Some(label), Some(0), Some(0)),
+            (
+                true,
+                Some(""),
+                true,
+                Some("another label"),
+                Some(0),
+                Some(0),
+            ),
+            (true, Some(""), true, None, Some(0), Some(0)),
+            (false, Some(""), true, Some(label), Some(0), Some(0)),
+            (true, Some(""), false, Some(label), Some(0), Some(0)),
+            (true, None, true, Some(label), Some(0), Some(0)),
+            (true, Some(""), true, Some(label), Some(1), Some(0)),
+            (true, Some(""), true, Some(label), Some(0), Some(1)),
+        ] {
+            let mut actual = read(label, caret, len);
+            normalize_empty_edit(&mut actual, is_edit, value, no_children, name);
+            assert_eq!(actual.text, label);
         }
     }
 }

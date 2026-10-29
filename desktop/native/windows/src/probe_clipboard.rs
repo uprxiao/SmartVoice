@@ -14,9 +14,37 @@ fn unicode(text: &str) -> clip::Entry {
 
 pub fn state() -> R<Value> {
     let snapshot = clip::snapshot()?;
+    let formats: Vec<clip::FormatInfo> = snapshot
+        .entries
+        .iter()
+        .map(|e| clip::FormatInfo {
+            format: e.format,
+            name: clip::format_name(e.format),
+            bytes: e.data.len(),
+            fnv64: clip::fnv64(&e.data),
+        })
+        .collect();
+    let text = snapshot
+        .entries
+        .iter()
+        .find(|e| e.format == clip::CF_UNICODE)
+        .map(|e| {
+            let units: Vec<u16> = e
+                .data
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .take_while(|u| *u != 0)
+                .collect();
+            String::from_utf16_lossy(&units)
+        });
+    let exclusions: Vec<Value> = snapshot.entries.iter().filter_map(|e| {
+        let name=clip::format_name(e.format);
+        if ["ExcludeClipboardContentFromMonitorProcessing","CanIncludeInClipboardHistory","CanUploadToCloudClipboard"].contains(&name.as_str()) {
+            Some(json!({"name":name,"dword":e.data.get(..4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))}))
+        } else { None }
+    }).collect();
     Ok(
-        json!({"sequence":snapshot.seq,"text":clip::read_unicode_text()?,
-        "formats":clip::describe_current()?,"skipped":snapshot.skipped}),
+        json!({"sequence":snapshot.seq,"text":text,"formats":formats,"skipped":snapshot.skipped,"exclusions":exclusions}),
     )
 }
 
@@ -28,6 +56,7 @@ pub fn seed(request: &Value) -> R<Value> {
     let mut entries = vec![unicode("SVI original clipboard")];
     match kind {
         "unicode" => {}
+        "intervening" => entries = vec![unicode("SVI intervening clipboard")],
         "html" => {
             // CF_HTML offsets are UTF-8 byte offsets from the start of the complete payload.
             let prefix = "<html><body><!--StartFragment-->";

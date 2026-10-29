@@ -247,7 +247,12 @@ impl Uia {
                 };
                 // Chromium AXPosition::IsEmptyObject exposes a navigation placeholder for empty edits.
                 // https://chromium.googlesource.com/chromium/src/+/main/ui/accessibility/ax_position.h
-                if read.text == "\u{fffc}" {
+                let name = el.CurrentName().ok().map(|name| name.to_string());
+                if read.text == "\u{fffc}"
+                    || name
+                        .as_ref()
+                        .is_some_and(|name| !name.is_empty() && *name == read.text)
+                {
                     let value = el
                         .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
                         .and_then(|v| v.CurrentValue())
@@ -264,6 +269,7 @@ impl Uia {
                         edit && framework.as_deref() == Some("Chrome"),
                         value.as_deref(),
                         no_children,
+                        name.as_deref(),
                     );
                 }
                 return Ok(read);

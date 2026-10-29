@@ -7,6 +7,8 @@ foreach ($k in @('notepad','input','textarea')) { $plannedIds += "TC-WIN-01-prod
 foreach ($k in @('notepad','input','textarea')) { foreach ($p in @('caret','empty')) { $plannedIds += "TC-WIN-01-product-$k-$p" } }
 foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-06-07-product-$k" }
 foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize')) { $plannedIds += "TC-WIN-13-product-$k" }
+foreach ($k in @('ignore','partial','caret','selection')) { $plannedIds += "TC-WIN-04-product-$k" }
+foreach ($id in @('TC-WIN-06-product-button','TC-WIN-10-product-invalid-lines','TC-WIN-10-product-eof','TC-WIN-10-product-oversize-line','TC-WIN-10-product-parent-exit','TC-WIN-11-product','TC-WIN-14-16-product')) { $plannedIds += $id }
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false
@@ -22,20 +24,27 @@ $script:Product = [System.Diagnostics.Process]::Start($productInfo)
 $script:Owned.Add($script:Product)
 $productStderr = $script:Product.StandardError.ReadToEndAsync()
 $script:ProductCallId = 0
-function Product([string]$Action, [hashtable]$Data = @{}) {
+function Product-Begin([string]$Action, [hashtable]$Data = @{}) {
     $script:ProductCallId++
     $request = @{} + $Data
     $request.id = $script:ProductCallId
     $request.action = $Action
     $script:Product.StandardInput.WriteLine(($request | ConvertTo-Json -Compress -Depth 12))
     $script:Product.StandardInput.Flush()
-    $read = $script:Product.StandardOutput.ReadLineAsync()
-    if (-not $read.Wait(5000) -or $null -eq $read.Result) { throw "Product helper timeout/disconnected: $Action; never replay" }
+    return @{request=$request;read=$script:Product.StandardOutput.ReadLineAsync()}
+}
+function Product-End([hashtable]$Pending) {
+    $read = $Pending.read
+    $request = $Pending.request
+    if (-not $read.Wait(5000) -or $null -eq $read.Result) { throw "Product helper timeout/disconnected: $($request.action); never replay" }
     $response = $read.Result | ConvertFrom-Json
     $callLog.WriteLine((@{kind='product';request=$request;response=$response} | ConvertTo-Json -Compress -Depth 20))
     $callLog.Flush()
     Assert-Probe ($response.id -eq $request.id) 'Product response id mismatch'
     return $response
+}
+function Product([string]$Action, [hashtable]$Data = @{}) {
+    return Product-End (Product-Begin $Action $Data)
 }
 function Product-Case([string]$Id, [scriptblock]$Body) {
     $started = [DateTime]::UtcNow
@@ -183,6 +192,7 @@ try {
         return @{external_copy_ms=$watch.ElapsedMilliseconds;clipboard=$clip;scope='independent process, product idle on stdin; UIA-blocked variant remains unexecuted'}
     }
     . (Join-Path $PSScriptRoot 'product-clipboard-probes.ps1')
+    . (Join-Path $PSScriptRoot 'product-boundary-probes.ps1')
 } finally {
     $script:Product.StandardInput.Close()
     if (-not $script:Product.WaitForExit(3000)) { $script:Product.Kill($true); $script:Product.WaitForExit(3000) | Out-Null }

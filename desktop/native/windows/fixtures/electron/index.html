@@ -10,11 +10,25 @@
 <label>密码 <input id="password" type="password" value="fixture-only"></label>
 <label>只读 <input id="readonly" readonly value="fixture-only"></label>
 <label>禁用 <input id="disabled" disabled value="fixture-only"></label>
+<button id="button">Fictional non-input button</button>
 <canvas id="unreadable" tabindex="0" width="600" height="55" role="application" aria-label="SVI custom input fixture"></canvas>
 <script>
 window.pasteChords = [];
 window.canvasValue = '';
 window.canvasPasteCount = 0;
+window.enterCount = 0;
+window.pasteMode = 'normal';
+document.getElementById('plain').addEventListener('paste', event => {
+  const field = event.currentTarget;
+  if (window.pasteMode === 'ignore') event.preventDefault();
+  if (window.pasteMode === 'partial') {
+    event.preventDefault();
+    field.setRangeText(event.clipboardData.getData('text/plain').slice(0, 1), field.selectionStart, field.selectionEnd, 'end');
+  }
+  if (window.pasteMode === 'caret' || window.pasteMode === 'selection') {
+    setTimeout(() => field.setSelectionRange(0, window.pasteMode === 'selection' ? 1 : 0), 0);
+  }
+});
 const canvas = document.getElementById('unreadable');
 canvas.getContext('2d').fillText('Custom input: no UIA text/caret provider', 5, 25);
 canvas.addEventListener('paste', event => {
@@ -23,6 +37,7 @@ canvas.addEventListener('paste', event => {
   window.canvasPasteCount++;
 });
 document.addEventListener('keydown', event => {
+  if (event.code === 'Enter' || event.code === 'NumpadEnter') window.enterCount++;
   if (event.code === 'KeyV' && event.ctrlKey) window.pasteChords.push({
     ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey, meta: event.metaKey
   });

@@ -112,12 +112,13 @@ async function command(request) {
       return { visible: hud.isVisible(), focused: hud.isFocused() };
     }
     case 'field': {
-      const id = ['plain', 'editor', 'password', 'readonly', 'disabled', 'unreadable'].includes(request.field) ? request.field : 'editor';
+      const id = ['plain', 'editor', 'password', 'readonly', 'disabled', 'unreadable', 'button'].includes(request.field) ? request.field : 'editor';
       main.show(); main.focus();
       const rect = await main.webContents.executeJavaScript(`(() => {
         const el=document.getElementById(${JSON.stringify(id)});
         if('value' in el && !el.readOnly && !el.disabled && el.type!=='password') el.value=${JSON.stringify(typeof request.initial === 'string' ? request.initial : 'BEGIN React END')};
-        window.pasteChords=[]; window.canvasValue=''; window.canvasPasteCount=0; el.focus();
+        window.pasteChords=[]; window.canvasValue=''; window.canvasPasteCount=0; window.enterCount=0;
+        window.pasteMode=${JSON.stringify(['ignore','partial','caret','selection'].includes(request.pasteMode) ? request.pasteMode : 'normal')}; el.focus();
         el.scrollIntoView({block:'center'});
         if(el.setSelectionRange && !el.disabled) el.setSelectionRange(${Number.isSafeInteger(request.start) ? request.start : 6},${Number.isSafeInteger(request.end) ? request.end : 11});
         const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2};
@@ -128,7 +129,7 @@ async function command(request) {
     case 'fieldState':
       return main.webContents.executeJavaScript(`(() => {
         const e=document.activeElement; return {value:e.value, start:e.selectionStart, end:e.selectionEnd, chords:window.pasteChords,
-          canvasValue:window.canvasValue, canvasPasteCount:window.canvasPasteCount};
+          canvasValue:window.canvasValue, canvasPasteCount:window.canvasPasteCount, enterCount:window.enterCount};
       })()`);
     case 'hotkeys': {
       const values = [];
