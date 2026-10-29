@@ -15,6 +15,7 @@ let hud;
 let processing = false;
 let quitting = false;
 let productPeer;
+let ownedPopup;
 
 function writeNew(name, data) {
   const target = path.join(folder, name);
@@ -64,6 +65,25 @@ async function pingNewHelper() {
 
 async function command(request) {
   switch (request.action) {
+    case 'openOwnedPopup': {
+      if(process.env.GITHUB_ACTIONS!=='true'||ownedPopup)throw Error('Fresh disposable popup required');
+      ownedPopup=new BrowserWindow({parent:main,width:420,height:280,show:false,title:'SVI owned popup',webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
+      const html='<title>SVI owned popup</title><textarea autofocus>popup unchanged</textarea><script>window.pasteCount=0;window.enterCount=0;document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key.toLowerCase()==="v")window.pasteCount++;if(e.key==="Enter")window.enterCount++;});</script>';
+      await ownedPopup.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html));
+      ownedPopup.show();ownedPopup.focus();ownedPopup.webContents.focus();
+      await ownedPopup.webContents.executeJavaScript('document.querySelector("textarea").focus()');
+      return {pid:process.pid,hwnd:Number(ownedPopup.getNativeWindowHandle().readBigUInt64LE()),parent_hwnd:Number(main.getNativeWindowHandle().readBigUInt64LE())};
+    }
+    case 'ownedPopupState': {
+      if(!ownedPopup)throw Error('Owned popup unavailable');
+      return ownedPopup.webContents.executeJavaScript('({value:document.querySelector("textarea").value,paste_count:window.pasteCount,enter_count:window.enterCount})');
+    }
+    case 'closeOwnedPopup': {
+      if(!ownedPopup)throw Error('Owned popup unavailable');
+      const popup=ownedPopup;ownedPopup=undefined;
+      const closed=new Promise(resolve=>popup.once('closed',resolve));popup.destroy();await closed;
+      return {closed:true};
+    }
     case 'productPeerStart': {
       if (process.env.GITHUB_ACTIONS !== 'true' || productPeer) throw new Error('disposable peer already exists or is not allowed');
       const executable = path.join(process.env.CARGO_TARGET_DIR, 'release', 'smartvoiceinput-input.exe');

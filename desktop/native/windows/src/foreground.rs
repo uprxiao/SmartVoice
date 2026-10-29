@@ -10,8 +10,9 @@ use windows::Win32::System::StationsAndDesktops::{
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_F24};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, GW_OWNER,
+    EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow, GetWindow, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, GA_ROOT,
+    GW_OWNER,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,6 +77,12 @@ pub fn foreground() -> Option<ForegroundInfo> {
     } else {
         Some(describe(hwnd))
     }
+}
+
+/// Actual top-level window, excluding owner chains (owned popups remain distinct).
+pub fn root_of(hwnd: isize) -> Option<ForegroundInfo> {
+    let root = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_ROOT) };
+    (!root.0.is_null()).then(|| describe(root))
 }
 
 /// False on the secure desktop (UAC prompt, lock screen) or when no interactive desktop exists.

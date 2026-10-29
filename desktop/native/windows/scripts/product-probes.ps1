@@ -12,6 +12,7 @@ foreach ($id in @('TC-WIN-06-product-button','TC-WIN-10-product-invalid-lines','
 $plannedIds += 'TC-WIN-08-product-parent-during-wait'
 foreach($id in @('TC-WIN-02-product-latest-position','TC-WIN-02-product-latest-window','TC-WIN-03-product-selection','TC-WIN-03-product-control','TC-WIN-03-product-dead-window','TC-WIN-03-product-own-restore','TC-WIN-15-product-slow-uia','TC-WIN-01-product-notepad-crlf','TC-WIN-01-product-electron-lf','TC-WIN-01-product-electron-crlf')) { $plannedIds += $id }
 $plannedIds += 'TC-WIN-04-product-late-readback'
+$plannedIds += 'TC-WIN-03-product-owned-popup'
 $script:SlowUiaEvidence=$null
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))

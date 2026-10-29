@@ -23,12 +23,18 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             "executable":std::env::current_exe().map_err(|e| e.to_string())?}),
         ),
         "foreground" => {
-            use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+            use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT, GA_ROOTOWNER};
             let root = foreground::foreground()
                 .map(|f| unsafe { GetAncestor(HWND(f.hwnd as *mut _), GA_ROOT) })
                 .filter(|h| !h.0.is_null())
                 .map(foreground::describe);
-            Ok(json!({"admission":foreground::admit_foreground(),"root":root}))
+            let root_owner = foreground::foreground()
+                .map(|f| unsafe { GetAncestor(HWND(f.hwnd as *mut _), GA_ROOTOWNER) })
+                .filter(|h| !h.0.is_null())
+                .map(foreground::describe);
+            Ok(
+                json!({"admission":foreground::admit_foreground(),"root":root,"root_owner":root_owner}),
+            )
         }
         "probeProcessLife" => {
             use windows::Win32::Foundation::{CloseHandle, FILETIME};

@@ -21,6 +21,7 @@ use windows::Win32::{
 
 struct Target {
     window: foreground::ForegroundInfo,
+    root: Option<foreground::ForegroundInfo>,
     element: Option<IUIAutomationElement>,
     before: Option<Readback>,
 }
@@ -89,6 +90,16 @@ fn same_window(a: &foreground::ForegroundInfo, b: &foreground::ForegroundInfo) -
         && a.pid == b.pid
         && a.process_birth_100ns.is_some()
         && a.process_birth_100ns == b.process_birth_100ns
+}
+fn same_explicit_window(target: &Target, now: &foreground::ForegroundInfo) -> bool {
+    // UIA SetFocus can expose the original Edit child as foreground. Preserve the
+    // captured GA_ROOT identity, not just a PID or GA_ROOTOWNER owner chain.
+    target.root.as_ref().is_some_and(|root| {
+        now.pid == target.window.pid
+            && now.process_birth_100ns == target.window.process_birth_100ns
+            && foreground::root_of(now.hwnd).is_some_and(|live| same_window(root, &live))
+            && foreground::root_of(target.window.hwnd).is_some_and(|live| same_window(root, &live))
+    })
 }
 fn baseline_equal(a: Option<&Readback>, b: Option<&Readback>) -> bool {
     matches!((a,b),(Some(a),Some(b)) if a.caret_utf16.is_some() && a.selection_utf16_len.is_some()
@@ -181,8 +192,12 @@ impl Product {
         {
             return Err(failed("TARGET_CHANGED", "写入前目标已变化，本次没有输入"));
         }
+        let root = foreground::root_of(window.hwnd).filter(|root| {
+            root.pid == window.pid && root.process_birth_100ns == window.process_birth_100ns
+        });
         Ok(Target {
             window,
+            root,
             element,
             before,
         })
@@ -209,6 +224,7 @@ impl Product {
         let hwnd = HWND(target.window.hwnd as *mut _);
         if !unsafe { IsWindow(Some(hwnd)) }.as_bool()
             || !same_window(&target.window, &foreground::describe(hwnd))
+            || !same_explicit_window(target, &target.window)
         {
             return Err("target_lifecycle_changed");
         }
@@ -216,19 +232,21 @@ impl Product {
             let Some(current) = foreground::foreground() else {
                 return Err("no_foreground");
             };
-            if current.pid != self.parent && !same_window(&target.window, &current) {
+            if current.pid != self.parent && !same_explicit_window(target, &current) {
                 return Err("restore_from_other_application");
             }
-            if !same_window(&target.window, &current) {
-                if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
+            if !same_explicit_window(target, &current) {
+                let root_hwnd =
+                    HWND(target.root.as_ref().ok_or("target_lifecycle_changed")?.hwnd as *mut _);
+                if !unsafe { SetForegroundWindow(root_hwnd) }.as_bool() {
                     // A helper is a different process from the foreground Main and Windows
                     // can reject its activation request. Restore only the already captured
-                    // UIA element, then ask Windows to activate its original top-level HWND.
+                    // UIA element, then verify its captured top-level window and control.
                     // Never use injected activation keys or relax window/control identity.
                     let Some(now) = foreground::foreground() else {
                         return Err("activation_rejected");
                     };
-                    if (now.pid != self.parent && !same_window(&target.window, &now))
+                    if (now.pid != self.parent && !same_explicit_window(target, &now))
                         || !self.parent_alive()
                         || !unsafe { IsWindow(Some(hwnd)) }.as_bool()
                         || !same_window(&target.window, &foreground::describe(hwnd))
@@ -242,9 +260,6 @@ impl Product {
                     {
                         return Err("focus_restore_failed");
                     }
-                    // Some providers activate their child Edit HWND. Keep the original
-                    // exact top-level HWND as the success condition, not merely its PID.
-                    let _ = unsafe { SetForegroundWindow(hwnd) };
                 }
                 // Activation crosses input queues and can briefly expose no foreground or
                 // the child Edit HWND. Let Windows restore its own last focused control;
@@ -252,7 +267,7 @@ impl Product {
                 let until = Instant::now() + Duration::from_millis(250);
                 loop {
                     let restored = foreground::foreground()
-                        .is_some_and(|now| same_window(&target.window, &now))
+                        .is_some_and(|now| same_explicit_window(target, &now))
                         && target.element.as_ref().is_some_and(|captured| {
                             self.uia
                                 .focused()
@@ -274,7 +289,7 @@ impl Product {
         let Ok(current) = self.current(false) else {
             return Err("current_target_unavailable");
         };
-        if !same_window(&target.window, &current.window) {
+        if !same_explicit_window(target, &current.window) {
             return Err("window_changed");
         }
         if !matches!((&target.element,&current.element),(Some(a),Some(b)) if self.uia.same_element(a,b))
