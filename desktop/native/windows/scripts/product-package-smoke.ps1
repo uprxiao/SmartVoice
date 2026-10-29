@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$PackageDir,[Parameter(Mandatory=$true)][string]$EvidenceFile,[switch]$Worker,[string]$ExecutableDir='',[switch]$LeaveStartupEnabled)
+param([Parameter(Mandatory=$true)][string]$PackageDir,[Parameter(Mandatory=$true)][string]$EvidenceFile,[switch]$Worker,[string]$ExecutableDir='',[switch]$LeaveStartupEnabled,[switch]$SyntheticMedia)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'probe-files.ps1')
@@ -8,6 +8,7 @@ if (-not $Worker) {
     $arguments=@('-NoProfile','-File',$PSCommandPath,'-Worker','-PackageDir',$PackageDir,'-EvidenceFile',$EvidenceFile)
     if ($ExecutableDir) { $arguments+=@('-ExecutableDir',$ExecutableDir) }
     if ($LeaveStartupEnabled) { $arguments+='-LeaveStartupEnabled' }
+    if ($SyntheticMedia) { $arguments+='-SyntheticMedia' }
     & $verify --medium (Get-Command pwsh).Source @arguments
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $EvidenceFile)) { throw 'Packaged product Medium smoke failed' }
     exit 0
@@ -32,7 +33,7 @@ public static class SviProductWindows {
 }
 '@
 }
-$data=[ordered]@{source_sha=$env:GITHUB_SHA;integrity_rid=$preflight.integrity_rid;scope='actual packaged app/bridge; no login, audio, model, hardware or S5';status='not_run'}
+$data=[ordered]@{source_sha=$env:GITHUB_SHA;integrity_rid=$preflight.integrity_rid;scope='actual packaged app/bridge; no login, audio, model, hardware or S5';status='not_run';synthetic_media_flags=[bool]$SyntheticMedia}
 $root=$null
 $second=$null
 $helpers=@()
@@ -58,6 +59,11 @@ try {
     $start=[System.Diagnostics.ProcessStartInfo]::new($exe)
     $start.UseShellExecute=$false
     $start.ArgumentList.Add('--background')
+    if ($SyntheticMedia) {
+        # Standard Chromium test devices only; no change to product permission checks or OS consent.
+        $start.ArgumentList.Add('--use-fake-device-for-media-stream')
+        $start.ArgumentList.Add('--use-fake-ui-for-media-stream')
+    }
     $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
     $listener.Start()
     $debugPort=$listener.LocalEndpoint.Port

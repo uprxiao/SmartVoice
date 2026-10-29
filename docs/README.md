@@ -34,6 +34,8 @@ Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参�
 
 `bae832e` 的[44 参数与开发包回归](https://github.com/uprxiao/SmartVoice/actions/runs/40932020502)全部通过：44/44正式原生参数、9/9技术阻断、15项Rust策略、NSIS与真实Main/preload后台/自启/第二实例/清理。DIB关联位图保真、真实位图源/冲突反例拒绝、保留旧进程句柄时父退出清理与粘贴前零写入均已实测。继续补实际安装/卸载/重装与其他参数，不把此分母视作40条专项或S5完成。
 
+`5356e4e` 的[两轮实际安装/卸载/重装](https://github.com/uprxiao/SmartVoice/actions/runs/40933749977)通过：含空格/中文路径的安装资源摘要、真实Main自启、卸载仅清自有Run/StartupApproved、其他虚构启动项及用户文件保留、重装默认off均核对。后续[54 参数矩阵](https://github.com/uprxiao/SmartVoice/actions/runs/40935021016)为53通过、1个有效历史目标恢复失败；最新位置/A-B-C、历史变更拒绝、慢UIA时跨进程复制、CRLF/LF原始读回均通过。恢复组正在做Win32激活与UIA SetFocus独立对照；托管机真实麦克风状态为denied，标准合成设备下的真实API状态另验，不绕过Main权限门禁或记为真实音频通过。
+
 ## 文档
 
 | 目录 | 内容 |

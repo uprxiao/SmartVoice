@@ -52,6 +52,55 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
                 )
             }
         }
+        "probeRestoreControl" => {
+            if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
+                return Err("restore control requires disposable CI fixtures".into());
+            }
+            let pid = fixture_pid(request)?;
+            let parent = request["fixture_parent_pid"]
+                .as_u64()
+                .and_then(|p| u32::try_from(p).ok())
+                .filter(|p| *p != 0 && *p != pid)
+                .ok_or("distinct fixture parent required")?;
+            let root = foreground::wait_window_of_pid(pid, 5000).ok_or("target root not found")?;
+            let parent_window =
+                foreground::wait_window_of_pid(parent, 5000).ok_or("parent window not found")?;
+            if !foreground::bring_to_foreground(root)? {
+                return Err("target focus failed".into());
+            }
+            let captured = uia.focused()?;
+            let baseline = uia.read_back(&captured)?;
+            let mut variants = vec![];
+            for use_uia in [false, true] {
+                if !foreground::bring_to_foreground(parent_window)? {
+                    return Err("parent focus failed".into());
+                }
+                let activated =
+                    unsafe { windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(root) }
+                        .as_bool();
+                let after_activate = foreground::foreground();
+                let same_before = uia
+                    .focused()
+                    .is_ok_and(|now| uia.same_element(&captured, &now));
+                let focus_result = if use_uia {
+                    Some(unsafe { captured.SetFocus() }.map_err(|e| e.to_string()))
+                } else {
+                    None
+                };
+                let after_focus = foreground::foreground();
+                let same_after = uia
+                    .focused()
+                    .is_ok_and(|now| uia.same_element(&captured, &now));
+                variants.push(json!({"use_uia_set_focus":use_uia,"activated":activated,
+                    "after_activate":after_activate,"same_element_before_set_focus":same_before,
+                    "focus_result":focus_result,"after_focus":after_focus,"same_element_after_set_focus":same_after,
+                    "readback":uia.read_back(&captured)}));
+            }
+            Ok(
+                json!({"root_hwnd":root.0 as isize,"baseline":baseline,"variants":variants,
+                "scope":"independent Win32 activation vs UIA SetFocus control; production unchanged"}),
+            )
+        }
         "probeReadNow" => {
             let pid = fixture_pid(request)?;
             let el = uia.focused()?;
