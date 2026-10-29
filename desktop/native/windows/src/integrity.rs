@@ -127,19 +127,36 @@ pub fn compare_with_pid(pid: u32) -> (Relation, Option<u32>) {
 }
 
 pub fn process_birth(pid: u32) -> Option<u64> {
-    use windows::Win32::Foundation::FILETIME;
-    use windows::Win32::System::Threading::GetProcessTimes;
+    use windows::Win32::Foundation::{FILETIME, WAIT_TIMEOUT};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+    };
     unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let process = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            false,
+            pid,
+        )
+        .ok()?;
         let (mut birth, mut exit, mut kernel, mut user) = (
             FILETIME::default(),
             FILETIME::default(),
             FILETIME::default(),
             FILETIME::default(),
         );
-        let result = GetProcessTimes(process, &mut birth, &mut exit, &mut kernel, &mut user);
+        // A terminated process still exposes creation time while any other process holds its handle.
+        // Birth identity alone is not liveness. Check the process object's state on both sides.
+        let result = (|| {
+            if WaitForSingleObject(process, 0) != WAIT_TIMEOUT {
+                return None;
+            }
+            GetProcessTimes(process, &mut birth, &mut exit, &mut kernel, &mut user).ok()?;
+            if WaitForSingleObject(process, 0) != WAIT_TIMEOUT {
+                return None;
+            }
+            Some(((birth.dwHighDateTime as u64) << 32) | birth.dwLowDateTime as u64)
+        })();
         let _ = CloseHandle(process);
-        result.ok()?;
-        Some(((birth.dwHighDateTime as u64) << 32) | birth.dwLowDateTime as u64)
+        result
     }
 }

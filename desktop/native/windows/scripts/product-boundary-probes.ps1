@@ -132,7 +132,12 @@ foreach ($ending in @('eof','oversize-line','parent-exit')) {
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
             switch ($ending) {
                 'eof' { $child.StandardInput.Close() }
-                'parent-exit' { Stop-OneOwned $logicalParent }
+                'parent-exit' {
+                    Stop-OneOwned $logicalParent
+                    $lifetime = Native 'probeProcessLife' @{fixture_pid=$logicalParent.Id}
+                    Write-NewJson $lifetime (Join-Path $OutputDir 'product-parent-retained-handle.json')
+                    Assert-Probe ($lifetime.creation_time_available -and $lifetime.wait_state -eq 0 -and $null -eq $lifetime.live_birth) 'Retained terminated process was still considered alive'
+                }
                 'oversize-line' {
                     $bytes = $Utf8.GetBytes(('A' * 1048577))
                     try { $child.StandardInput.BaseStream.Write($bytes,0,$bytes.Length); $child.StandardInput.BaseStream.Flush() } catch [System.IO.IOException] { }
@@ -145,5 +150,43 @@ foreach ($ending in @('eof','oversize-line','parent-exit')) {
             if ($null -ne $logicalParent -and -not $logicalParent.HasExited) { Stop-OneOwned $logicalParent }
             if ($stderr.Wait(1000)) { [System.IO.File]::WriteAllText((Join-Path $OutputDir "product-lifecycle-$ending-stderr.txt"),$stderr.Result,$Utf8) }
         }
+    }
+}
+Product-Case 'TC-WIN-08-product-parent-during-wait' {
+    $logicalParent = Start-Owned (Get-Command pwsh).Source @('-NoProfile','-Command','Start-Sleep -Seconds 60')
+    $info = [System.Diagnostics.ProcessStartInfo]::new($productInfo.FileName)
+    $info.UseShellExecute=$false; $info.CreateNoWindow=$true
+    $info.RedirectStandardInput=$true; $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
+    $info.StandardInputEncoding=$Utf8; $info.StandardOutputEncoding=$Utf8
+    $info.ArgumentList.Add('--parent-pid'); $info.ArgumentList.Add([string]$logicalParent.Id)
+    $child = [System.Diagnostics.Process]::Start($info); $script:Owned.Add($child)
+    $stderr = $child.StandardError.ReadToEndAsync()
+    try {
+        $child.StandardInput.WriteLine('{"id":1,"action":"permission"}');$child.StandardInput.Flush()
+        $ready=$child.StandardOutput.ReadLineAsync()
+        Assert-Probe ($ready.Wait(5000) -and $null -ne $ready.Result -and ($ready.Result | ConvertFrom-Json).supported) 'Parent-race helper did not initialize'
+        $field=Fixture 'field' @{field='plain'}
+        Focus-Target $field.pid
+        $null=Native 'probeSeedClipboard'
+        $before=Native 'probeClipboardState'
+        $held=Native 'probeHoldModifiers' @{fixture_pid=$field.pid}
+        Assert-Probe ($held.held -contains 162 -and $held.held -contains 160) 'Race precondition modifiers not held'
+        $child.StandardInput.WriteLine('{"id":2,"action":"insertCurrent","insertion_id":"parent-race","text":"MUST NOT PASTE"}');$child.StandardInput.Flush()
+        $remaining=$child.StandardOutput.ReadToEndAsync()
+        Stop-OneOwned $logicalParent
+        Assert-Probe ($child.WaitForExit(3000) -and $remaining.Wait(1000)) 'Parent-race helper remained alive'
+        if ($remaining.Result -cne '') {
+            $reply=$remaining.Result | ConvertFrom-Json
+            Assert-Probe ($reply.id -eq 2 -and $reply.status -eq 'failed' -and $reply.effect -eq 'none') 'Parent-race response admitted a possible write'
+        }
+        $actual=Fixture 'fieldState'
+        $after=Native 'probeClipboardState'
+        Assert-Probe ($actual.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $actual.enterCount -eq 0 -and $before.sequence -eq $after.sequence) 'Parent exit allowed a late target/clipboard write'
+        return @{held=$held;actual=$actual;before=$before;after=$after;response_after_parent_exit=$remaining.Result;exit_code=$child.ExitCode;scope='parent identity exits while injected modifiers block dispatch; retained process handle and open stdin'}
+    } finally {
+        $null=Native 'probeReleaseModifiers'
+        if (-not $child.HasExited) { Stop-OneOwned $child }
+        if (-not $logicalParent.HasExited) { Stop-OneOwned $logicalParent }
+        if ($stderr.Wait(1000)) { [System.IO.File]::WriteAllText((Join-Path $OutputDir 'product-parent-race-stderr.txt'),$stderr.Result,$Utf8) }
     }
 }

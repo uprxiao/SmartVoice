@@ -42,7 +42,7 @@ fn main() {
         eprintln!("UI Automation initialization failed");
         std::process::exit(2);
     };
-    let mut product = Product::new(uia, parent);
+    let mut product = Product::new(uia, parent, birth);
     let mut reader = std::io::BufReader::new(std::io::stdin().lock());
     let mut stdout = std::io::stdout().lock();
     const MAX: usize = 1024 * 1024;

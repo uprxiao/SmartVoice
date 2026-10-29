@@ -23,6 +23,35 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             "executable":std::env::current_exe().map_err(|e| e.to_string())?}),
         ),
         "foreground" => Ok(json!({"admission":foreground::admit_foreground()})),
+        "probeProcessLife" => {
+            use windows::Win32::Foundation::{CloseHandle, FILETIME};
+            use windows::Win32::System::Threading::{
+                GetProcessTimes, OpenProcess, WaitForSingleObject,
+                PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+            };
+            let pid = fixture_pid(request)?;
+            unsafe {
+                let process = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                    false,
+                    pid,
+                )
+                .map_err(|e| e.to_string())?;
+                let (mut birth, mut exit, mut kernel, mut user) = (
+                    FILETIME::default(),
+                    FILETIME::default(),
+                    FILETIME::default(),
+                    FILETIME::default(),
+                );
+                let times =
+                    GetProcessTimes(process, &mut birth, &mut exit, &mut kernel, &mut user).is_ok();
+                let state = WaitForSingleObject(process, 0).0;
+                let _ = CloseHandle(process);
+                Ok(
+                    json!({"creation_time_available":times,"wait_state":state,"live_birth":integrity::process_birth(pid)}),
+                )
+            }
+        }
         "probeReadNow" => {
             let pid = fixture_pid(request)?;
             let el = uia.focused()?;

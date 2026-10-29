@@ -30,6 +30,8 @@ S4 接续复核：`f4a4520` 后续 CI 中 Admin 测试夹具在源码编译阶�
 
 Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参数运行](https://github.com/uprxiao/SmartVoice/actions/runs/40908758987)为21通过、2个 Chrome 空框失败，另有夹具清理未确认；原失败保留，未放宽全文/光标或清理判据。后续[30 参数诊断](https://github.com/uprxiao/SmartVoice/actions/runs/40910927523)为27通过、Chrome空框2组及DIB 1组失败，9/9技术阻断与清理通过。HTML/RTF/文件列表等各格式保真和不安全格式拒绝已有实测；空框标签名归一化修复仍要求独立 ValuePattern为空、无嵌入子项、零光标/选区，DIB关联格式继续处理；正在展开异常读回、协议字节与跨进程版本回归。
 
+`cc93f22` 的[41 参数回归](https://github.com/uprxiao/SmartVoice/actions/runs/40924485576)为39通过、2失败：Chrome两种空框已精确通过；四种异常读回、非法字节/EOF/超大行、生产修饰键中和、跨进程新复制与三排除 DWORD 均通过。剩余 DIB 和父进程退出分别修复中；后者改用进程对象存活状态结合原始创建时间，并在实际粘贴前核父身份。所有修复仍须 Windows 独立回归，不提前记通过。
+
 ## 文档
 
 | 目录 | 内容 |

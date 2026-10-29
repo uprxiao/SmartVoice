@@ -9,6 +9,7 @@ foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-0
 foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize','bitmap','dib-conflict')) { $plannedIds += "TC-WIN-13-product-$k" }
 foreach ($k in @('ignore','partial','caret','selection')) { $plannedIds += "TC-WIN-04-product-$k" }
 foreach ($id in @('TC-WIN-06-product-button','TC-WIN-10-product-invalid-lines','TC-WIN-10-product-eof','TC-WIN-10-product-oversize-line','TC-WIN-10-product-parent-exit','TC-WIN-11-product','TC-WIN-14-16-product')) { $plannedIds += $id }
+$plannedIds += 'TC-WIN-08-product-parent-during-wait'
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false

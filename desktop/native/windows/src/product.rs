@@ -27,6 +27,7 @@ struct Target {
 pub struct Product {
     pub uia: Uia,
     parent: u32,
+    parent_birth: u64,
     targets: BTreeMap<u64, Target>,
     sequence: u64,
     executions: Executions,
@@ -114,16 +115,23 @@ impl Drop for Clip<'_> {
 }
 
 impl Product {
-    pub fn new(uia: Uia, parent: u32) -> Self {
+    pub fn new(uia: Uia, parent: u32, parent_birth: u64) -> Self {
         Self {
             uia,
             parent,
+            parent_birth,
             targets: BTreeMap::new(),
             sequence: 0,
             executions: Executions::default(),
         }
     }
+    fn parent_alive(&self) -> bool {
+        crate::integrity::process_birth(self.parent) == Some(self.parent_birth)
+    }
     fn current(&self, warmup: bool) -> Result<Target, Value> {
+        if !self.parent_alive() {
+            return Err(failed("TARGET_CHANGED", "应用已退出，本次没有输入"));
+        }
         let admission = foreground::admit_foreground();
         if !admission.allowed {
             return Err(match admission.reject {
@@ -168,7 +176,9 @@ impl Product {
             }
         }
         let before = element.as_ref().and_then(|el| readable(&self.uia, el));
-        if !foreground::foreground().is_some_and(|f| same_window(&window, &f)) {
+        if !self.parent_alive()
+            || !foreground::foreground().is_some_and(|f| same_window(&window, &f))
+        {
             return Err(failed("TARGET_CHANGED", "写入前目标已变化，本次没有输入"));
         }
         Ok(Target {
@@ -369,7 +379,8 @@ impl Product {
                 return failed("ZERO_WRITE", "写入前剪贴板或按键已变化，本次没有输入");
             }
             let fresh = foreground::admit_foreground();
-            if !fresh.allowed
+            if !self.parent_alive()
+                || !fresh.allowed
                 || !fresh.info.is_some_and(|f| same_window(&target.window, &f))
                 || target.element.as_ref().is_some_and(|el| {
                     protected(&self.uia, el)
