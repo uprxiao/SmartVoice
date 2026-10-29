@@ -1,0 +1,41 @@
+.win-title { justify-content: space-between; }
+.win-title > span { font-size: 12px; color: var(--text-2); }
+.win-controls { display: flex; align-self: stretch; margin-right: -14px; }
+.win-controls button { width: 44px; font-size: 15px; }
+.win-controls button:hover { background: var(--fill-hover); }
+.win-controls button:last-child:hover { background: #c42b1c; color: #fff; }
+.platform-content { width: 100%; padding: 32px 44px; overflow: auto; }
+.platform-content h1 { font-size: 24px; font-weight: 500; margin: 0 0 24px; }
+.platform-group { margin-top: 36px; }
+.platform-group h2 { margin: 0; border-bottom: 1px solid var(--border-thin); padding-bottom: 12px; font-size: 17px; font-weight: 500; color: var(--text-3); }
+.platform-group .setting-row { gap: 32px; padding: 20px 0; align-items: flex-start; }
+.platform-group .setting-row b { font-size: 15px; line-height: 24px; }
+.platform-group .setting-row p { font-size: 14px; line-height: 24px; max-width: 640px; margin-top: 4px; }
+.platform-group .setting-row > div:first-child { flex: 1; }
+.platform-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; max-width: 270px; }
+.platform-shortcut { min-width: 230px; justify-content: space-between; border: 1px solid var(--border); padding: 9px 12px; border-radius: 8px; font-size: 13px; }
+.platform-shortcut:hover { background: var(--fill-hover); }
+.platform-nav { width: 200px; flex: 0 0 200px; background: var(--bg-sidebar); padding: 24px 14px; }
+.platform-nav button { display: block; width: 100%; margin-bottom: 6px; text-align: left; padding: 10px 14px; border-radius: 8px; font-size: 14px; color: var(--text-2); }
+.platform-nav button:hover, .platform-nav button.selected { background: var(--fill-hover); color: var(--text); }
+.platform-nav .brand-name { display: block; font-size: 14px; padding: 0 6px 28px; }
+.platform-note { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.7; }
+.platform-hud-stage { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-height: 250px; display: grid; place-content: center; padding: 28px; margin-bottom: 22px; }
+.platform-failure { background: #000; color: #f2f1f0; padding: 10px 10px 10px 12px; border: 1px solid #ffffff47; border-radius: 12px; width: 284px; box-shadow: 0 0 20px #0002, 0 8px 16px #0003; }
+.platform-failure p { margin: 0; font-size: 13px; line-height: 18px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.platform-failure .actions { margin-top: 8px; gap: 6px; }
+.platform-failure button { color: #fff; height: 24px; padding: 0 10px; line-height: 24px; font-size: 12px; border-radius: 12px; background: #424242; }
+.platform-failure button:hover { background: #535353; }
+.platform-failure button:first-child { color: #111; background: #f2f1f0; }
+.platform-failure button:last-child { width: 24px; padding: 0; margin-left: auto; }
+.platform-result { max-width: 700px; }
+.platform-result p { min-height: 45px; }
+.tray-stage { min-height: 290px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; position: relative; display: grid; place-content: center; padding: 28px; }
+.tray-stage > .plain-card { width: 360px; max-width: 100%; }
+.tray-menu { width: 190px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 6px; box-shadow: 0 8px 30px #0002; position: absolute; bottom: 46px; right: 14px; }
+.tray-menu button { display: block; width: 100%; padding: 9px 12px; text-align: left; font-size: 13px; border-radius: 5px; }
+.tray-menu button:hover { background: var(--fill-hover); }
+.tray-taskbar { height: 36px; position: absolute; bottom: 0; left: 0; right: 0; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-end; padding-right: 20px; background: var(--bg-sidebar); }
+.tray-taskbar button { font-size: 12px; padding: 4px 9px; border-radius: 5px; }
+.tray-taskbar button:hover { background: var(--fill-hover); }
+@media (max-width: 800px) { .platform-nav { width: 155px; flex-basis: 155px; }.platform-content { padding: 26px; }.platform-group .setting-row { flex-wrap: wrap; }.platform-control { max-width: 100%; } }

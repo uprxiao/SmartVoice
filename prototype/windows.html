@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SmartVoiceInput · Windows v0.0.2 原型</title>
+  <link rel="stylesheet" href="assets/app.css">
+  <link rel="stylesheet" href="assets/windows.css">
+</head>
+<body>
+  <div class="prototype-shell">
+    <header class="review-toolbar" aria-label="原型评审工具">
+      <div><strong>Windows v0.0.2 · 平台差异原型</strong><span>虚构状态，仅本页内存演示；系统操作由正式产品验收</span></div>
+      <nav>
+        <a href="index.html#home">已有完整原型</a>
+        <label>平台 <select id="platform" aria-label="评审平台"><option value="win32">Windows</option><option value="darwin">macOS 对照</option></select></label>
+        <label>页面 <select id="page" aria-label="评审页面"><option value="settings">设置与权限</option><option value="onboarding">首次使用</option><option value="hud">胶囊与结果</option><option value="tray">托盘与生命周期</option></select></label>
+        <label>状态 <select id="scene" aria-label="演示状态"></select></label>
+        <button id="reset">重置演示</button>
+      </nav>
+    </header>
+    <div class="app-window" id="appWindow">
+      <div class="titlebar" id="titlebar"></div>
+      <div class="app-body" id="appBody"></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+    <footer class="review-footer" id="reviewNote">沿用方案 B 视觉与范围。权限、麦克风、剪贴板、前台窗口、自启和安装包均需真实环境验证。</footer>
+  </div>
+  <script src="assets/windows.js"></script>
+</body>
+</html>
