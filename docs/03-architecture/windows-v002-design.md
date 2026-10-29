@@ -35,7 +35,7 @@ Windows 的 `trusted:true` 只兼容现有“可尝试原生输入”调用链�
 |---|---|---|
 | `permission` | 可选 prompt | supported/trusted/observationSupported；Windows 不弹 AX 授权、不提权 |
 | `capture` | 无 | 当前目标的 opaque target、app、observable；正文、选区和 UIA 引用只保留 helper 内存 |
-| `validate` | target、可选 restoreFocus | valid、code/message；仅显式目标可恢复焦点，且须仍可核验同一窗口/控件/原文/选区 |
+| `validate` | target、可选 restoreFocus | valid、code/message、本机 reason 阶段码；仅显式目标可恢复焦点，且须仍可核验同一窗口/控件/原文/选区 |
 | `insertCurrent` | insertion_id、text | 正常自动路径，写前重新取得当前目标；不受较早 capture 约束 |
 | `insert` | target、insertion_id、text、可选 restoreFocus | 历史/手动路径，再次严格校验已指定目标后一次粘贴，不退回其他窗口 |
 | `inputBounds` | 无 | available、bounds{x,y,width,height}、coordinateSpace；Windows 为 physical，Main 转 DIP；无结果不操作焦点 |

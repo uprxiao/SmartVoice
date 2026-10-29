@@ -112,8 +112,10 @@ Product-Case 'TC-WIN-03-product-own-restore' {
         $ownActual=Fixture 'fieldState';$ownAfter=Native 'probeClipboardState'
         Assert-Probe ($own.status -eq 'failed' -and $own.effect -eq 'none' -and $ownActual.chords.Count -eq 0 -and $before.sequence -eq $ownAfter.sequence) 'Product admitted its own parent window'
         $result=Peer-Product 4 'insert' @{target=$capture.target;restoreFocus=$true;insertion_id='valid-own-restore';text='中文🙂'}
-        $actual=Capture-Target $target.Id
-        Write-NewJson @{peer=$peer;capture=$capture;control=$restoreControl;own_refusal=$own;result=$result;actual=$actual} (Join-Path $OutputDir 'product-own-restore.json')
+        $foregroundAtResult=Native 'foreground'
+        $actual=$null
+        if($null -ne $foregroundAtResult.admission.info -and $foregroundAtResult.admission.info.pid -eq $target.Id){$actual=Capture-Target $target.Id}
+        Write-NewJson @{peer=$peer;capture=$capture;control=$restoreControl;own_refusal=$own;result=$result;foreground_at_result=$foregroundAtResult;actual=$actual} (Join-Path $OutputDir 'product-own-restore.json')
         Assert-Probe ($result.status -eq 'inserted' -and $actual.readback.text -ceq 'BEGIN 中文🙂 END' -and $actual.readback.caret_utf16 -eq 10 -and $actual.readback.selection_utf16_len -eq 0) 'Explicit valid target did not restore from the same parent UI'
         $releaseOne=Peer-Product 5 'release' @{target=$capture.target};$releaseTwo=Peer-Product 6 'release' @{target=$capture.target}
         Assert-Probe ($releaseOne.released -and $releaseTwo.released) 'Peer target release was not idempotent'

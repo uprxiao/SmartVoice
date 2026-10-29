@@ -22,7 +22,14 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             json!({"probe_only":true,"pid":std::process::id(),"integrity_rid":integrity::own_rid()?,
             "executable":std::env::current_exe().map_err(|e| e.to_string())?}),
         ),
-        "foreground" => Ok(json!({"admission":foreground::admit_foreground()})),
+        "foreground" => {
+            use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+            let root = foreground::foreground()
+                .map(|f| unsafe { GetAncestor(HWND(f.hwnd as *mut _), GA_ROOT) })
+                .filter(|h| !h.0.is_null())
+                .map(foreground::describe);
+            Ok(json!({"admission":foreground::admit_foreground(),"root":root}))
+        }
         "probeProcessLife" => {
             use windows::Win32::Foundation::{CloseHandle, FILETIME};
             use windows::Win32::System::Threading::{

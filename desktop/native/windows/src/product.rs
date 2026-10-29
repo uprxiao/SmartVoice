@@ -199,29 +199,29 @@ impl Product {
     fn key(id: &str) -> Option<u64> {
         id.strip_prefix("win-")?.parse().ok()
     }
-    fn validate(&self, id: &str, restore: bool) -> bool {
+    fn validate(&self, id: &str, restore: bool) -> Result<(), &'static str> {
         let Some(target) = Self::key(id).and_then(|k| self.targets.get(&k)) else {
-            return false;
+            return Err("target_not_cached");
         };
         if target.before.is_none() || target.element.is_none() {
-            return false;
+            return Err("target_unreadable");
         }
         let hwnd = HWND(target.window.hwnd as *mut _);
         if !unsafe { IsWindow(Some(hwnd)) }.as_bool()
             || !same_window(&target.window, &foreground::describe(hwnd))
         {
-            return false;
+            return Err("target_lifecycle_changed");
         }
         if restore && foreground::input_desktop_accessible() {
             let Some(current) = foreground::foreground() else {
-                return false;
+                return Err("no_foreground");
             };
             if current.pid != self.parent && !same_window(&target.window, &current) {
-                return false;
+                return Err("restore_from_other_application");
             }
             if !same_window(&target.window, &current) {
                 if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
-                    return false;
+                    return Err("activation_rejected");
                 }
                 // Activation crosses input queues and can briefly expose no foreground or
                 // the child Edit HWND. Let Windows restore its own last focused control;
@@ -235,8 +235,11 @@ impl Product {
                                 .focused()
                                 .is_ok_and(|now| self.uia.same_element(captured, &now))
                         });
-                    if !self.parent_alive() || Instant::now() > until {
-                        return false;
+                    if !self.parent_alive() {
+                        return Err("parent_exited");
+                    }
+                    if Instant::now() > until {
+                        return Err("activation_not_stable");
                     }
                     if restored {
                         break;
@@ -246,11 +249,19 @@ impl Product {
             }
         }
         let Ok(current) = self.current(false) else {
-            return false;
+            return Err("current_target_unavailable");
         };
-        same_window(&target.window, &current.window)
-            && matches!((&target.element,&current.element),(Some(a),Some(b)) if self.uia.same_element(a,b))
-            && baseline_equal(target.before.as_ref(), current.before.as_ref())
+        if !same_window(&target.window, &current.window) {
+            return Err("window_changed");
+        }
+        if !matches!((&target.element,&current.element),(Some(a),Some(b)) if self.uia.same_element(a,b))
+        {
+            return Err("control_changed");
+        }
+        if !baseline_equal(target.before.as_ref(), current.before.as_ref()) {
+            return Err("baseline_changed");
+        }
+        Ok(())
     }
     pub fn dispatch(&mut self, request: &Request) -> Value {
         match request.action.as_str() {
@@ -275,11 +286,14 @@ impl Product {
                 json!({"released":true})
             }
             "validate" => {
-                let valid = self.validate(
-                    request.target.as_deref().unwrap_or(""),
-                    request.restore_focus,
-                );
-                json!({"valid":valid,"code":if valid {""} else {"TARGET_CHANGED"},"message":if valid {""} else {"指定的输入位置已变化，请重新指定或复制结果"}})
+                let reason = self
+                    .validate(
+                        request.target.as_deref().unwrap_or(""),
+                        request.restore_focus,
+                    )
+                    .err();
+                let valid = reason.is_none();
+                json!({"valid":valid,"reason":reason.unwrap_or(""),"code":if valid {""} else {"TARGET_CHANGED"},"message":if valid {""} else {"指定的输入位置已变化，请重新指定或复制结果"}})
             }
             "inputBounds" => {
                 let el = self.uia.focused().ok();
@@ -331,11 +345,15 @@ impl Product {
             return failed("ZERO_WRITE", "请松开快捷键后重试");
         }
         let explicit = r.action == "insert";
-        if explicit && !self.validate(r.target.as_deref().unwrap_or(""), r.restore_focus) {
-            return failed(
-                "TARGET_CHANGED",
-                "指定的输入位置已变化，请重新指定或复制结果",
-            );
+        if explicit {
+            if let Err(reason) = self.validate(r.target.as_deref().unwrap_or(""), r.restore_focus) {
+                let mut response = failed(
+                    "TARGET_CHANGED",
+                    "指定的输入位置已变化，请重新指定或复制结果",
+                );
+                response["reason"] = reason.into();
+                return response;
+            }
         }
         if let Err(e) = self.current(true) {
             return e;
@@ -383,8 +401,13 @@ impl Product {
         };
         let mut response = (|| {
             // Obtain the latest position after both the modifier wait and clipboard publication.
-            if explicit && !self.validate(r.target.as_deref().unwrap_or(""), false) {
-                return failed("TARGET_CHANGED", "指定的输入位置已变化，本次没有输入");
+            if explicit {
+                if let Err(reason) = self.validate(r.target.as_deref().unwrap_or(""), false) {
+                    let mut response =
+                        failed("TARGET_CHANGED", "指定的输入位置已变化，本次没有输入");
+                    response["reason"] = reason.into();
+                    return response;
+                }
             }
             let target = match self.current(false) {
                 Ok(t) => t,
