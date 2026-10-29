@@ -4,6 +4,7 @@ $script:ProductResults = [ordered]@{}
 $plannedIds = @('TC-WIN-10-product','TC-WIN-05-product','TC-WIN-03-product','TC-WIN-09-product','TC-WIN-15-product')
 foreach ($f in @('plain','editor')) { foreach ($p in @('selection','caret','empty')) { $plannedIds += "TC-WIN-01-product-electron-$f-$p" } }
 foreach ($k in @('notepad','input','textarea')) { $plannedIds += "TC-WIN-01-product-$k" }
+foreach ($k in @('notepad','input','textarea')) { foreach ($p in @('caret','empty')) { $plannedIds += "TC-WIN-01-product-$k-$p" } }
 foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-06-07-product-$k" }
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
@@ -82,24 +83,37 @@ try {
         }
     }
     foreach ($kind in @('notepad','input','textarea')) {
-        Product-Case "TC-WIN-01-product-$kind" {
+        foreach ($position in @('selection','caret','empty')) {
+        $caseId = if ($position -eq 'selection') { "TC-WIN-01-product-$kind" } else { "TC-WIN-01-product-$kind-$position" }
+        Product-Case $caseId {
+            $initial = if ($position -eq 'empty') { '' } else { 'BEGIN React END' }
+            $start = if ($position -eq 'empty') { 0 } else { 6 }
+            $length = if ($position -eq 'selection') { 5 } else { 0 }
             if ($kind -eq 'notepad') {
-                $file = Join-Path $OutputDir 'product-notepad.txt'
-                [System.IO.File]::WriteAllText($file, 'BEGIN React END', $Utf8)
+                $file = Join-Path $OutputDir "product-notepad-$position.txt"
+                [System.IO.File]::WriteAllText($file, $initial, $Utf8)
                 $target = Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($file)
             } else {
                 $page = [System.Uri]::new((Join-Path $NativeRoot 'fixtures/chrome.html')).AbsoluteUri + '?kind=' + $kind
-                $target = Start-Owned $ChromeExe @("--user-data-dir=$(Join-Path $OutputDir "product-$kind")",'--no-first-run','--no-default-browser-check','--disable-sync',"--app=$page")
+                if ($position -eq 'empty') { $page += '&empty=1' }
+                $target = Start-Owned $ChromeExe @("--user-data-dir=$(Join-Path $OutputDir "product-$kind-$position")",'--no-first-run','--no-default-browser-check','--disable-sync',"--app=$page")
             }
+            $preparation = Wait-OwnedWindow $target
             Focus-Target $target.Id
-            $null = Native 'probeSelect' @{fixture_pid=$target.Id;start=6;length=5}
+            $null = Native 'probeSelect' @{fixture_pid=$target.Id;start=$start;length=$length}
             $before = Capture-Target $target.Id
-            Assert-Probe ($before.readback.text -ceq 'BEGIN React END') 'Product fixture baseline mismatch'
+            Assert-Probe ($before.readback.text -ceq $initial -and $before.readback.caret_utf16 -eq $start -and $before.readback.selection_utf16_len -eq $length) 'Product fixture baseline text/selection mismatch'
             $null = Native 'probeSeedClipboard'
-            $result = Product 'insertCurrent' @{insertion_id="actual-$kind";text='中文🙂'}
+            $text = '中文🙂'
+            $expected = $initial.Substring(0,$start) + $text + $initial.Substring($start+$length)
+            $result = Product 'insertCurrent' @{insertion_id="actual-$kind-$position";text=$text}
             $after = Capture-Target $target.Id
-            Assert-Probe ($result.status -eq 'inserted' -and $result.observable -and $after.readback.text -ceq 'BEGIN 中文🙂 END' -and $after.readback.caret_utf16 -eq 10 -and $after.readback.selection_utf16_len -eq 0) 'Product real target did not exactly match independent expectation'
-            return @{kind=$kind;result=$result;independent=$after}
+            Assert-Probe ($result.status -eq 'inserted' -and $result.effect -eq 'written' -and $result.observable -and $after.readback.text -ceq $expected -and $after.readback.caret_utf16 -eq ($start+$text.Length) -and $after.readback.selection_utf16_len -eq 0) 'Product real target did not exactly match independent expectation'
+            $clipboard = Native 'probeClipboardState'
+            Assert-Probe ($clipboard.text -ceq 'SVI original clipboard') 'Product real target did not restore Unicode clipboard'
+            $null = Product 'release' @{target=$result.target}
+            return @{kind=$kind;position=$position;preparation=$preparation;before=$before;expected=$expected;result=$result;independent=$after;clipboard=$clipboard}
+        }
         }
     }
     Product-Case 'TC-WIN-05-product' {

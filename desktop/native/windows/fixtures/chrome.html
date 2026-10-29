@@ -6,11 +6,13 @@
 <h1>SmartVoiceInput：Chrome 技术验证</h1>
 <p>虚构文本。实际值与选区由 UI Automation 独立读回。</p>
 <script>
-const kind = new URLSearchParams(location.search).get('kind');
+const params = new URLSearchParams(location.search);
+const kind = params.get('kind');
 const field = document.createElement(kind === 'textarea' ? 'textarea' : 'input');
-field.value = 'BEGIN React END';
+const empty = params.get('empty') === '1';
+field.value = empty ? '' : 'BEGIN React END';
 field.setAttribute('aria-label', 'SVI fictional probe field');
 document.body.append(field);
-addEventListener('load', () => { field.focus(); field.setSelectionRange(6, 11); });
+addEventListener('load', () => { field.focus(); field.setSelectionRange(empty ? 0 : 6, empty ? 0 : 11); });
 </script>
 </html>
