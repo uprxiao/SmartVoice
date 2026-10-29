@@ -85,6 +85,15 @@ function harness() {
     URL, URLSearchParams, AbortController, performance, setTimeout, clearTimeout, fetch: fetchBoundary });
   const modules = new Map();
   const allowed = new Set(['App.tsx', 'views/ModelsView.tsx', 'api.ts', 'http.ts', 'config.ts', 'lib.ts', 'date-range.ts']);
+  // Do not charge recursive TypeScript compilation to the callback's VM guard.
+  // Each test still gets fresh modules and the original bounded invocations.
+  const factories = new Map([...allowed].map((name) => {
+    const file = path.join(sourceRoot, name);
+    const output = ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName: file, reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
+    assert.equal((output.diagnostics ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error).length, 0);
+    return [name, new vm.Script('(function(require,module,exports){\n' + output.outputText + '\n})', { filename: file })];
+  }));
   function invoke(callback, ...args) {
     context.__callback = callback; context.__args = args;
     return new vm.Script('__callback(...__args)').runInContext(context, { timeout: 250 });
@@ -92,10 +101,6 @@ function harness() {
   function load(name) {
     if (modules.has(name)) return modules.get(name).exports;
     assert.ok(allowed.has(name), 'Only declared production modules are loaded');
-    const file = path.join(sourceRoot, name);
-    const output = ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName: file, reportDiagnostics: true,
-      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
-    assert.equal((output.diagnostics ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error).length, 0);
     const module = { exports: {} }; modules.set(name, module);
     const boundary = (specifier) => {
       if (specifier === 'react') return react;
@@ -110,8 +115,7 @@ function harness() {
       const relative = path.posix.normalize(path.posix.join(path.posix.dirname(name), specifier));
       return load(relative + (relative.endsWith('ModelsView') ? '.tsx' : '.ts'));
     };
-    const factory = new vm.Script('(function(require,module,exports){\n' + output.outputText + '\n})', { filename: file })
-      .runInContext(context, { timeout: 250 });
+    const factory = factories.get(name).runInContext(context, { timeout: 250 });
     invoke(factory, boundary, module, module.exports);
     return module.exports;
   }

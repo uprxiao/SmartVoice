@@ -26,6 +26,8 @@
 | S4 正式开发 | 主体已实现，分层验证中 | 正式 helper、平台 UI/麦克风/RPC、托盘/单实例/后台自启、坐标与打包已实现；源码 `48628d1` 的[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40881145082)通过，含 Desktop Mac/Windows 各694项、Rust13项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项专项另已通过。`8bc42f6` 的[Windows 开发包验证](https://github.com/uprxiao/SmartVoice/actions/runs/40883701708)通过：正式原生17/17参数、9/9技术阻断、NSIS x64、普通完整性进程后台隐藏/不抢焦点、真实RPC自启off/on/off读回、第二实例和helper清理。Mac arm64开发包构建通过。失败与未执行参数全部保留，不以部分参数冒称40条或S5全通过。见 [专项用例](04-test/test-cases-windows-v002.md)与 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
 | S5 真机验收 | 未开始 | Windows x64 自测；V-04 物理按键及 V-05/06/11/12/13/15 和目标安装包均须留证 |
 
+S4 接续复核：`f4a4520` 后续 CI 中 Admin 测试夹具在源码编译阶段触发 250ms VM 超时，其他任务通过。现将两个夹具的编译准备移到受限调用之前，保留原执行限制、全部权限/竞态断言与93项分母；本地构建/93项及同延迟对照通过，CI复验中。Admin 浏览器接真实服务等剩余联调继续推进，不据此放行 S5。
+
 ## 文档
 
 | 目录 | 内容 |

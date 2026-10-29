@@ -72,6 +72,17 @@ function harness() {
     URL, URLSearchParams, AbortController, performance, setTimeout, clearTimeout, fetch: fetchBoundary });
   const modules = new Map();
   const allowed = new Set(['App.tsx', 'api.ts', 'http.ts', 'config.ts']);
+  // Prepare compiler work before any timed VM invocation, retaining fresh
+  // module state and the existing callback/test deadlines for every case.
+  const factories = new Map([...allowed].map((name) => {
+    const file = path.join(sourceRoot, name);
+    const output = ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName: file, reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+        jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
+    assert.equal((output.diagnostics ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error).length, 0,
+      `Transpile diagnostics in ${name}`);
+    return [name, new vm.Script(`(function(require,module,exports){\n${output.outputText}\n})`, { filename: file })];
+  }));
   function invoke(callback, ...args) {
     context.__callback = callback;
     context.__args = args;
@@ -80,13 +91,6 @@ function harness() {
   function load(name) {
     if (modules.has(name)) return modules.get(name).exports;
     assert.ok(allowed.has(name), 'The loader only runs the four declared production modules');
-    const file = path.join(sourceRoot, name);
-    const source = fs.readFileSync(file, 'utf8');
-    const output = ts.transpileModule(source, { fileName: file, reportDiagnostics: true,
-      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
-        jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } });
-    assert.equal((output.diagnostics ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error).length, 0,
-      `Transpile diagnostics in ${name}`);
     const module = { exports: {} };
     modules.set(name, module);
     const requireBoundary = (specifier) => {
@@ -103,8 +107,7 @@ function harness() {
       if (['./api', './http', './config'].includes(specifier)) return load(`${specifier.slice(2)}.ts`);
       throw new Error(`Unexpected module boundary: ${specifier}`);
     };
-    const factory = new vm.Script(`(function(require,module,exports){\n${output.outputText}\n})`, { filename: file })
-      .runInContext(context, { timeout: 250 });
+    const factory = factories.get(name).runInContext(context, { timeout: 250 });
     invoke(factory, requireBoundary, module, module.exports);
     return module.exports;
   }
