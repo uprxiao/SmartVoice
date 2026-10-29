@@ -118,6 +118,12 @@ def prepare(run_dir, pg_bin, port):
         raise RuntimeError("Fixture refuses non-mock providers")
     with Path(value["config"]).open("x", encoding="utf-8") as file:
         yaml.safe_dump(config, file, allow_unicode=True)
+    if os.name == "nt":
+        # PostgreSQL restricts its own process token. Grant this exact user on the
+        # new fixture, rather than relying on an Administrators-only inherited ACL.
+        acl = subprocess.check_output(["pwsh.exe", "-NoProfile", "-NonInteractive", "-File",
+                  str(ROOT / "desktop/native/windows/scripts/fixture-acl.ps1"), "-OwnedDir", str(run_dir)], text=True)
+        write_new(run_dir / "setup-acl.json", json.loads(acl))
     with (run_dir / "setup.private.log").open("x", encoding="utf-8") as log:
         def run(stage, args, **kwargs):
             try:
