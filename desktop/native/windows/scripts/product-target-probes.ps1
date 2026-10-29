@@ -90,18 +90,21 @@ Product-Case 'TC-WIN-03-product-owned-popup' {
     Assert-Probe ($null -ne $original.root -and $null -ne $original.root_owner) 'Original top-level fixture was not established'
     try {
         $popup=Fixture 'openOwnedPopup'
+        $ownership=Native 'probeOwnPopup' @{fixture_pid=$field.pid;fixture_popup_hwnd=$popup.hwnd;fixture_owner_hwnd=$popup.parent_hwnd}
         $end=[DateTime]::UtcNow.AddSeconds(2)
         do {$current=Native 'foreground';if($null -ne $current.root -and $current.root.hwnd -eq $popup.hwnd){break};Start-Sleep -Milliseconds 20}while([DateTime]::UtcNow -lt $end)
-        Write-NewJson @{original=$original;popup=$popup;current=$current} (Join-Path $OutputDir 'product-owned-popup-preparation.json')
-        Assert-Probe ($null -ne $current.admission.info -and $null -ne $current.root -and $null -ne $current.root_owner -and $current.admission.info.pid -eq $field.pid -and $current.root.hwnd -eq $popup.hwnd -and $current.root.hwnd -ne $original.root.hwnd -and $current.root_owner.hwnd -eq $original.root_owner.hwnd) 'BLOCKED: Actual same-process owned popup/root-owner contrast was not obtained'
+        Write-NewJson @{original=$original;popup=$popup;ownership=$ownership;current=$current} (Join-Path $OutputDir 'product-owned-popup-preparation.json')
+        Assert-Probe ($ownership.popup_style_confirmed -and $ownership.owner_confirmed -and $ownership.frame_refreshed -and $ownership.root_still_distinct -and $ownership.root_owner_matches -and $null -ne $current.admission.info -and $null -ne $current.root -and $null -ne $current.root_owner -and $current.admission.info.pid -eq $field.pid -and $current.root.hwnd -eq $popup.hwnd -and $current.root.hwnd -ne $original.root.hwnd -and $current.root_owner.hwnd -eq $original.root_owner.hwnd) 'BLOCKED: Actual same-process owned popup/root-owner contrast was not obtained'
         $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
         $validation=Product 'validate' @{target=$capture.target}
         $restore=Product 'validate' @{target=$capture.target;restoreFocus=$true}
         $result=Product 'insert' @{target=$capture.target;restoreFocus=$true;insertion_id='owned-popup-refusal';text='MUST NOT PASTE'}
         $actual=Fixture 'ownedPopupState';$mainActual=Fixture 'fieldState';$after=Native 'probeClipboardState'
+        $afterForeground=Native 'foreground'
         Assert-Probe (-not $validation.valid -and $validation.reason -eq 'window_changed' -and -not $restore.valid -and $restore.reason -eq 'restore_from_other_application' -and $result.status -eq 'failed' -and $result.effect -eq 'none' -and $result.reason -eq 'restore_from_other_application') 'Explicit target accepted a different GA_ROOT with the same process/owner'
         Assert-Probe ($actual.value -ceq 'popup unchanged' -and $actual.paste_count -eq 0 -and $actual.enter_count -eq 0 -and $mainActual.value -ceq 'BEGIN React END' -and $mainActual.chords.Count -eq 0 -and $before.sequence -eq $after.sequence) 'Owned popup rejection caused a write'
-        return @{original=$original;popup=$popup;current=$current;validation=$validation;restore_validation=$restore;result=$result;actual=$actual;main_actual=$mainActual;clipboard_unchanged=$true}
+        Assert-Probe ($null -ne $afterForeground.root -and $null -ne $afterForeground.root_owner -and $afterForeground.root.hwnd -eq $popup.hwnd -and $afterForeground.root_owner.hwnd -eq $original.root_owner.hwnd) 'Owned popup rejection changed foreground or lost the actual owner contrast'
+        return @{original=$original;popup=$popup;ownership=$ownership;current=$current;after_foreground=$afterForeground;validation=$validation;restore_validation=$restore;result=$result;actual=$actual;main_actual=$mainActual;clipboard_unchanged=$true}
     } finally {if($null -ne $popup){$closed=Fixture 'closeOwnedPopup';Assert-Probe $closed.closed 'Owned popup close not confirmed'};$null=Product 'release' @{target=$capture.target}}
 }
 function Peer-Product([int]$Id,[string]$Action,[hashtable]$Data=@{}) {

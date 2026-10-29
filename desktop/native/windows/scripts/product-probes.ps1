@@ -81,9 +81,11 @@ try {
         Assert-Probe ($permission.supported -and $permission.trusted -and -not $permission.observationSupported) 'Windows capability mismatch'
         $probe = Product 'probePaste' @{text='must not paste'}
         Assert-Probe ($probe.error.code -eq 'NATIVE_REQUEST_INVALID' -and $probe.error.effect -eq 'none') 'Production exposed probe actions'
+        $ownerProbe = Product 'probeOwnPopup'
+        Assert-Probe ($ownerProbe.error.code -eq 'NATIVE_REQUEST_INVALID' -and $ownerProbe.error.effect -eq 'none') 'Production exposed fixture owner/style actions'
         $invalid = Product 'insertCurrent' @{text='x'}
         Assert-Probe ($invalid.error.effect -eq 'none') 'Missing insertion ID was not rejected'
-        return @{permission=$permission;probe_rejected=$probe;invalid_rejected=$invalid}
+        return @{permission=$permission;probe_rejected=$probe;owner_probe_rejected=$ownerProbe;invalid_rejected=$invalid}
     }
     foreach ($fieldName in @('plain','editor')) {
         foreach ($position in @('selection','caret','empty')) {

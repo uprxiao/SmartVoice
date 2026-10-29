@@ -36,6 +36,79 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
                 json!({"admission":foreground::admit_foreground(),"root":root,"root_owner":root_owner}),
             )
         }
+        "probeOwnPopup" => {
+            if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
+                return Err("owned popup preparation requires disposable CI".into());
+            }
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetAncestor, GetWindow, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos,
+                GA_ROOT, GA_ROOTOWNER, GWLP_HWNDPARENT, GWL_STYLE, GW_OWNER, SWP_FRAMECHANGED,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CHILD, WS_POPUP,
+            };
+            let pid = fixture_pid(request)?;
+            let window = |field: &str, title: &str| -> R<HWND> {
+                let raw = request[field]
+                    .as_i64()
+                    .filter(|v| *v > 0)
+                    .ok_or("fixture HWND required")?;
+                let hwnd = HWND(raw as isize as *mut _);
+                let facts = foreground::describe(hwnd);
+                if facts.pid != pid
+                    || facts.title != title
+                    || !facts.class.starts_with("Chrome_WidgetWin_")
+                    || unsafe { GetAncestor(hwnd, GA_ROOT) } != hwnd
+                    || unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32 & WS_CHILD.0 != 0
+                {
+                    return Err(
+                        "only the two explicitly owned top-level fixture windows are allowed"
+                            .into(),
+                    );
+                }
+                Ok(hwnd)
+            };
+            let popup = window("fixture_popup_hwnd", "SVI owned popup")?;
+            let owner = window("fixture_owner_hwnd", "SVI Windows feasibility fixture")?;
+            if popup == owner {
+                return Err("distinct popup and owner required".into());
+            }
+            unsafe {
+                let before_style = GetWindowLongPtrW(popup, GWL_STYLE) as u32;
+                let before_owner = GetWindow(popup, GW_OWNER).unwrap_or_default();
+                if !before_owner.0.is_null() && foreground::describe(before_owner).pid != pid {
+                    return Err("refusing to replace a different fixture owner".into());
+                }
+                // Only this disposable top-level fixture becomes an actual WS_POPUP.
+                // No parent/owner/style operation exists in the production protocol.
+                let _ = SetWindowLongPtrW(
+                    popup,
+                    GWL_STYLE,
+                    (before_style | WS_POPUP.0) as i32 as isize,
+                );
+                let _ = SetWindowLongPtrW(popup, GWLP_HWNDPARENT, owner.0 as isize);
+                let refreshed = SetWindowPos(
+                    popup,
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED,
+                )
+                .is_ok();
+                let after_style = GetWindowLongPtrW(popup, GWL_STYLE) as u32;
+                let after_owner = GetWindow(popup, GW_OWNER).unwrap_or_default();
+                let actual_root = GetAncestor(popup, GA_ROOT);
+                let actual_root_owner = GetAncestor(popup, GA_ROOTOWNER);
+                Ok(
+                    json!({"before_style":before_style,"before_owner_hwnd":before_owner.0 as isize,
+                    "after_style":after_style,"after_owner_hwnd":after_owner.0 as isize,
+                    "popup_style_confirmed":after_style & WS_POPUP.0 != 0,
+                    "owner_confirmed":after_owner == owner,"frame_refreshed":refreshed,
+                    "root_still_distinct":actual_root == popup && actual_root != owner,
+                    "root_owner_matches":actual_root_owner == GetAncestor(owner, GA_ROOTOWNER)}),
+                )
+            }
+        }
         "probeProcessLife" => {
             use windows::Win32::Foundation::{CloseHandle, FILETIME};
             use windows::Win32::System::Threading::{
