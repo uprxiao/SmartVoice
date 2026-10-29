@@ -10,13 +10,13 @@ module.exports = {
   files: ['out/**/*', 'package.json'],
   extraResources: [
     { from: 'resources/service-ca.crt', to: 'service-ca.crt' },
-    { from: 'resources/voice', to: 'voice' },
     { from: 'resources/icon.png', to: 'icon.png' },
   ],
   artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
   publish: null,
   afterPack: require('./scripts/prepare-mac-signing.cjs'),
   mac: {
+    extraResources: [{ from: 'resources/voice/smartvoiceinput-input', to: 'voice/smartvoiceinput-input' }],
     icon: 'build/icon.icns',
     category: 'public.app-category.productivity',
     target: ['dmg'],
@@ -31,6 +31,7 @@ module.exports = {
     title: '${productName} ${version}',
   },
   win: {
+    extraResources: [{ from: 'resources/voice/smartvoiceinput-input.exe', to: 'voice/smartvoiceinput-input.exe' }],
     icon: 'build/icon.ico',
     target: ['nsis'],
   },

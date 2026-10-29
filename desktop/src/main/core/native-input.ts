@@ -22,6 +22,7 @@ const effectOf = (value: unknown): NativeEffect | undefined =>
   value === 'none' || value === 'written' || value === 'unknown' ? value : undefined;
 
 export class NativeVoiceInput {
+  get supportsObservation(): boolean { return process.platform === 'darwin'; }
   private child: ChildProcessWithoutNullStreams | null = null;
   private seq = 0;
   private disposed = false;
@@ -64,9 +65,9 @@ export class NativeVoiceInput {
 
   private async callOnChild(action: string, data: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     if (this.disposed) throw new NativeCallError('原生输入桥已关闭', 'NATIVE_CLOSED', 'none', action);
-    if (process.platform !== 'darwin') {
+    if (process.platform !== 'darwin' && process.platform !== 'win32') {
       if (action === 'permission') return { supported: false, trusted: false };
-      throw new NativeCallError('外部输入目前仅在 macOS 提供', 'NATIVE_UNSUPPORTED', 'none', action);
+      throw new NativeCallError('当前平台不支持外部输入', 'NATIVE_UNSUPPORTED', 'none', action);
     }
     const id = ++this.seq;
     // Serialize before spawning or enqueuing; errors here are proven zero-write.
@@ -96,10 +97,12 @@ export class NativeVoiceInput {
   }
 
   private spawnChild(): void {
+    const name = `smartvoiceinput-input${process.platform === 'win32' ? '.exe' : ''}`;
     const binary = app.isPackaged
-      ? join(process.resourcesPath, 'voice', 'smartvoiceinput-input')
-      : join(app.getAppPath(), 'resources', 'voice', 'smartvoiceinput-input');
-    const child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+      ? join(process.resourcesPath, 'voice', name)
+      : join(app.getAppPath(), 'resources', 'voice', name);
+    const child = spawn(binary, process.platform === 'win32' ? ['--parent-pid', String(process.pid)] : [],
+      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child = child;
     child.stderr.resume();
     let buffered = Buffer.alloc(0);

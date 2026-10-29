@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Verify = Join-Path $env:CARGO_TARGET_DIR 'release/verify.exe'
-$Helper = Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'
+$Helper = Join-Path $env:CARGO_TARGET_DIR 'release/svi-windows-probe.exe'
 $NativeRoot = Split-Path $PSScriptRoot -Parent
 $script:Owned = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
 $script:CallId = 0
@@ -360,6 +360,7 @@ try {
         Assert-Probe ($result.attempts[2].pid -ne $result.attempts[3].pid) 'Crash restart reused old PID'
         return @{result=$result;scope='independent packaged Electron fixture, not product integration'}
     }
+    . (Join-Path $PSScriptRoot 'product-probes.ps1')
 } catch {
     Write-NewJson @{error=$_.Exception.Message;at=[DateTime]::UtcNow.ToString('o')} (Join-Path $OutputDir 'worker-failure.json')
 } finally {
@@ -384,4 +385,6 @@ try {
 }
 $summary = Get-Content -Raw (Join-Path $OutputDir 'summary.json') | ConvertFrom-Json
 if (-not $summary.technical_gate_passed) { exit 1 }
+$products = Get-Content -Raw (Join-Path $OutputDir 'product-cases.json') | ConvertFrom-Json
+if ($products.cases.Count -ne $products.planned -or @($products.cases | Where-Object status -ne 'pass').Count -gt 0) { exit 1 }
 exit 0

@@ -22,7 +22,7 @@ if (-not $code) {
 }
 $fixture = Join-Path $env:SVI_PROBE_BUNDLE 'win-unpacked/SVI Windows Probe.exe'
 if (-not (Test-Path $fixture)) { throw 'Packaged Electron probe missing' }
-$helper = Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'
+$helper = Join-Path $env:CARGO_TARGET_DIR 'release/svi-windows-probe.exe'
 $packagedHelper = Join-Path $env:SVI_PROBE_BUNDLE 'win-unpacked/resources/voice/smartvoiceinput-input.exe'
 if ((Get-FileHash $helper -Algorithm SHA256).Hash -ne (Get-FileHash $packagedHelper -Algorithm SHA256).Hash) {
     throw 'Packaged helper does not match the compiled probe'

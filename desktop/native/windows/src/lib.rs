@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod foreground;
 #[cfg(windows)]
 pub mod hotkey;
+pub mod input_policy;
 #[cfg(windows)]
 pub mod integrity;
 #[cfg(windows)]
@@ -21,6 +22,8 @@ pub mod modifier_watch;
 pub mod paste;
 #[cfg(windows)]
 pub mod probe_protocol;
+#[cfg(windows)]
+pub mod product;
 pub mod report;
 #[cfg(windows)]
 pub mod uia;

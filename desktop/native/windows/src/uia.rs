@@ -237,7 +237,7 @@ impl Uia {
         unsafe {
             if let Ok(tp) = el.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId) {
                 let doc = tp.DocumentRange().map_err(ctx("DocumentRange"))?;
-                let text = doc.GetText(-1).map_err(ctx("GetText"))?.to_string();
+                let text = doc.GetText(200001).map_err(ctx("GetText"))?.to_string();
                 let (caret, sel_len) = selection_of(&tp, &doc);
                 return Ok(Readback {
                     source: "text_pattern".into(),
@@ -300,7 +300,14 @@ impl Uia {
                 note: "no element".into(),
             },
         });
-        // 4. Mouse position: last resort so the capsule is never left unanchored.
+        // 4. Foreground window before the mouse on a potentially different screen.
+        let foreground = crate::foreground::foreground();
+        steps.push(CaretStep {
+            source: "foreground_window",
+            rect: foreground.map(|f| f.rect).filter(non_empty),
+            note: String::new(),
+        });
+        // 5. Mouse position: last resort.
         let mut p = POINT::default();
         let ok = unsafe { GetCursorPos(&mut p) }.is_ok();
         steps.push(CaretStep {

@@ -90,18 +90,54 @@ pub fn format_name(format: u32) -> String {
     }
 }
 
-thread_local! {
-    // OpenClipboard(NULL) + EmptyClipboard gives a NULL owner: SetClipboardData can fail.
-    // A message-only window belongs to this thread and never takes foreground/focus.
-    static OWNER: R<HWND> = unsafe {
-        CreateWindowExW(WINDOW_EX_STYLE(0), windows::core::w!("STATIC"), windows::core::w!("SVI probe clipboard"),
-            WINDOW_STYLE(0), 0, 0, 0, 0, Some(HWND_MESSAGE), None, None, None)
-            .map_err(ctx("CreateWindowExW(clipboard owner)"))
-    };
+// Ownership callbacks must remain responsive while the protocol thread blocks in stdin/UIA.
+fn owner() -> R<HWND> {
+    static OWNER: std::sync::OnceLock<R<isize>> = std::sync::OnceLock::new();
+    OWNER
+        .get_or_init(|| {
+            let (send, receive) = std::sync::mpsc::sync_channel(1);
+            std::thread::spawn(move || unsafe {
+                let result = CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    windows::core::w!("STATIC"),
+                    windows::core::w!("SmartVoiceInput clipboard"),
+                    WINDOW_STYLE(0),
+                    0,
+                    0,
+                    0,
+                    0,
+                    Some(HWND_MESSAGE),
+                    None,
+                    None,
+                    None,
+                )
+                .map_err(ctx("CreateWindowExW(clipboard owner)"));
+                let Ok(window) = result else {
+                    let _ = send.send(result.map(|w| w.0 as isize));
+                    return;
+                };
+                if send.send(Ok(window.0 as isize)).is_err() {
+                    return;
+                }
+                let mut message = windows::Win32::UI::WindowsAndMessaging::MSG::default();
+                while windows::Win32::UI::WindowsAndMessaging::GetMessageW(&mut message, None, 0, 0)
+                    .0
+                    > 0
+                {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&message);
+                    windows::Win32::UI::WindowsAndMessaging::DispatchMessageW(&message);
+                }
+            });
+            receive
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .map_err(|_| "clipboard owner initialization timed out".to_string())?
+        })
+        .clone()
+        .map(|value| HWND(value as *mut _))
 }
 
 fn open_with_retry() -> R<()> {
-    let owner = OWNER.with(Clone::clone)?;
+    let owner = owner()?;
     let mut last = String::new();
     for _ in 0..30 {
         match unsafe { OpenClipboard(Some(owner)) } {
@@ -134,7 +170,7 @@ fn copy_global(h: HANDLE) -> Option<Vec<u8>> {
     unsafe {
         let g = HGLOBAL(h.0);
         let size = GlobalSize(g);
-        if size == 0 {
+        if size == 0 || size > 32 * 1024 * 1024 {
             return None;
         }
         let p = GlobalLock(g);
@@ -183,7 +219,18 @@ pub fn snapshot() -> R<Snapshot> {
         } else {
             match unsafe { GetClipboardData(f) } {
                 Ok(h) if !h.is_invalid() => match copy_global(h) {
-                    Some(data) => entries.push(Entry { format: f, data }),
+                    Some(data)
+                        if entries.iter().map(|e: &Entry| e.data.len()).sum::<usize>()
+                            + data.len()
+                            <= 32 * 1024 * 1024 =>
+                    {
+                        entries.push(Entry { format: f, data })
+                    }
+                    Some(_) => skipped.push(Skipped {
+                        format: f,
+                        name,
+                        reason: "snapshot_too_large",
+                    }),
                     None => skipped.push(Skipped {
                         format: f,
                         name,
@@ -244,7 +291,7 @@ pub struct Publication {
 // A user's intervening EmptyClipboard assigns a different owner: never adopt its version.
 fn published_sequence() -> R<Option<u32>> {
     open_with_retry()?;
-    let owner = OWNER.with(Clone::clone)?;
+    let owner = owner()?;
     let result = unsafe { GetClipboardOwner() }
         .ok()
         .filter(|current| *current == owner)
@@ -257,7 +304,7 @@ fn published_sequence() -> R<Option<u32>> {
 
 pub fn still_owned(seq: u32) -> R<bool> {
     open_with_retry()?;
-    let owner = OWNER.with(Clone::clone)?;
+    let owner = owner()?;
     let result = sequence() == seq && unsafe { GetClipboardOwner() }.ok() == Some(owner);
     unsafe {
         let _ = CloseClipboard();

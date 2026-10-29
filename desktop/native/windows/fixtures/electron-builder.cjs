@@ -8,7 +8,7 @@ module.exports = {
   files: ['package.json', 'main.cjs', 'index.html'],
   asar: true,
   npmRebuild: false,
-  extraResources: [{ from: path.join(process.env.CARGO_TARGET_DIR, 'release/smartvoiceinput-input.exe'), to: 'voice/smartvoiceinput-input.exe' }],
+  extraResources: [{ from: path.join(process.env.CARGO_TARGET_DIR, 'release/svi-windows-probe.exe'), to: 'voice/smartvoiceinput-input.exe' }],
   win: { signAndEditExecutable: false },
   publish: null
 };

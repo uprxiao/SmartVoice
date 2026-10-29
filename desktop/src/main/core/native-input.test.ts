@@ -171,3 +171,28 @@ describe('live Accessibility permission refresh', () => {
     expect(children[0].kill).toHaveBeenCalledOnce();
   });
 });
+
+describe('Windows product helper', () => {
+  it('starts the exe hidden with parent identity and uses the shared flat protocol', async () => {
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+    expect(bridge.supportsObservation).toBe(false);
+    const permission = bridge.call('permission');
+    expect(mocks.spawn).toHaveBeenCalledWith(expect.stringMatching(/voice\/smartvoiceinput-input\.exe$/),
+      ['--parent-pid', String(process.pid)], expect.objectContaining({ windowsHide: true }));
+    reply(children[0], { supported: true, trusted: true, observationSupported: false });
+    expect(await permission).toMatchObject({ supported: true, trusted: true });
+    const insert = bridge.call('insertCurrent', { insertion_id: 'fake-id', text: '中文🙂' });
+    expect(children).toHaveLength(1);
+    expect(JSON.parse(children[0].stdin.write.mock.calls.at(-1)![0])).toMatchObject({ action: 'insertCurrent', text: '中文🙂' });
+    reply(children[0], { status: 'inserted', effect: 'written', observable: true });
+    expect(await insert).toMatchObject({ status: 'inserted', observable: true });
+  });
+  it('keeps Windows writes unknown on account invalidation and never replays', async () => {
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+    const write = bridge.call('insertCurrent', { text: '虚构内容' }).catch(e => e);
+    bridge.invalidate();
+    expect(await write).toMatchObject({ effect: 'unknown' });
+    expect(children[0].stdin.write).toHaveBeenCalledOnce();
+    expect(children[0].kill).toHaveBeenCalledOnce();
+  });
+});
