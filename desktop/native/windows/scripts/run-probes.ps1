@@ -87,10 +87,10 @@ if (-not $Worker) {
         $workerInfo.UseShellExecute=$false;$workerInfo.CreateNoWindow=$true
         $workerInfo.RedirectStandardOutput=$true;$workerInfo.RedirectStandardError=$true
         foreach($arg in @('--medium',$pwsh,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-FixtureExe',$FixtureExe,'-ChromeExe',$ChromeExe,'-CodeExe',$CodeExe,'-HighTargetId',[string]$high.Id)){$workerInfo.ArgumentList.Add($arg)}
-        $worker=[Diagnostics.Process]::Start($workerInfo);$script:Owned.Add($worker)
-        $workerOut=$worker.StandardOutput.ReadToEndAsync();$workerErr=$worker.StandardError.ReadToEndAsync()
+        $probeWorkerProcess=[Diagnostics.Process]::Start($workerInfo);$script:Owned.Add($probeWorkerProcess)
+        $workerOut=$probeWorkerProcess.StandardOutput.ReadToEndAsync();$workerErr=$probeWorkerProcess.StandardError.ReadToEndAsync()
         $releaseRequest=Join-Path $OutputDir 'release-high.request.json';$released=$false
-        while(-not $worker.HasExited){
+        while(-not $probeWorkerProcess.HasExited){
             if(-not $released -and (Test-Path $releaseRequest)){
                 $request=Get-Content -Raw $releaseRequest|ConvertFrom-Json
                 Assert-Probe ($request.schema -eq 'svi-release-owned-high-v1' -and $request.high_pid -eq $high.Id -and $request.after_case -eq 'TC-WIN-05-product') 'Invalid owned High release request'
@@ -102,7 +102,7 @@ if (-not $Worker) {
             }
             Start-Sleep -Milliseconds 50
         }
-        $worker.WaitForExit();$workerCode=$worker.ExitCode
+        $probeWorkerProcess.WaitForExit();$workerCode=$probeWorkerProcess.ExitCode
         $streams=@{stdout_complete=$workerOut.Wait(1000);stderr_complete=$workerErr.Wait(1000)}
         Write-NewJson $streams (Join-Path $OutputDir 'medium-wrapper-streams.json')
         Assert-Probe ($streams.stdout_complete -and $streams.stderr_complete) 'Medium wrapper output handles did not close after owned worker exit'

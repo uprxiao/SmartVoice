@@ -28,8 +28,15 @@ jobs:
           Get-ChildItem desktop/native/windows/scripts/*.ps1 | ForEach-Object {
             $tokens = $null
             $parseErrors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+            $parameters = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach($parameter in $ast.ParamBlock.Parameters){$null=$parameters.Add($parameter.Name.VariablePath.UserPath)}
+            foreach($assignment in $ast.FindAll({param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left -is [System.Management.Automation.Language.VariableExpressionAst]},$true)){
+              $parent=$assignment.Parent;$functionLocal=$false
+              while($null -ne $parent -and $parent -ne $ast){if($parent -is [System.Management.Automation.Language.FunctionDefinitionAst]){$functionLocal=$true;break};$parent=$parent.Parent}
+              if(-not $functionLocal -and $parameters.Contains($assignment.Left.VariablePath.UserPath)){throw "Root typed parameter reassigned: $($_.Name):$($assignment.Extent.StartLineNumber)"}
+            }
           }
       - name: Restore Rust probe build cache
         id: rust-cache
