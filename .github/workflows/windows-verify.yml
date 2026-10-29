@@ -11,7 +11,7 @@ permissions:
 jobs:
   native-probes:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -134,8 +134,39 @@ jobs:
           $normal=(Get-Content -Raw "$env:SVI_PROBE_EVIDENCE/product-rpc.json" | ConvertFrom-Json).observations.initial.microphone
           $synthetic=(Get-Content -Raw "$folder/product-rpc.json" | ConvertFrom-Json).observations.initial.microphone
           Write-NewJson @{normal=$normal;synthetic_devices=$synthetic;main_os_permission_check_unchanged=$true;browser_prompt_simulated=$true;physical_microphone_verified=$false;audio_chain_status=$(if($synthetic.status -eq 'granted' -and -not $synthetic.error){'eligible_not_run'}else{'blocked'});scope='actual Main API comparison only; no product recording/audio/model pass'} "$folder/feasibility.json"
+      - uses: astral-sh/setup-uv@v6
+        if: ${{ !cancelled() && steps.product-media.outcome == 'success' }}
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - uses: actions/setup-python@v5
+        if: ${{ !cancelled() && steps.product-media.outcome == 'success' }}
+        with:
+          python-version: '3.12'
+      - name: Prepare locked real-service test runtime
+        id: live-runtime
+        if: ${{ !cancelled() && steps.product-media.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $env:UV_PROJECT_ENVIRONMENT="$env:RUNNER_TEMP/svi-live-python"
+          uv sync --project server --frozen --extra dev
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          "SVI_LIVE_PYTHON=$env:RUNNER_TEMP/svi-live-python/Scripts/python.exe" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Push-Location admin
+          try { pnpm install --frozen-lockfile; if($LASTEXITCODE -ne 0){throw 'Locked Admin dependencies failed'}; pnpm build; if($LASTEXITCODE -ne 0){throw 'Actual Admin build failed'} } finally { Pop-Location }
+          # A separate development build uses the documented loopback address.
+          # Frozen NSIS/installed resources above are already built and are not repackaged.
+          $env:VITE_API_BASE_URL='http://127.0.0.1:17863'
+          $env:VITE_SERVICE_CA_SHA256=''
+          Push-Location desktop
+          try { pnpm build; if($LASTEXITCODE -ne 0){throw 'Development Main/preload/renderer build failed'} } finally { Pop-Location }
+      - name: Actual client real-service and Admin UI integration
+        id: live-ui
+        if: ${{ !cancelled() && steps.live-runtime.outcome == 'success' }}
+        shell: pwsh
+        run: ./desktop/native/windows/scripts/product-live-service.ps1 -PythonExe $env:SVI_LIVE_PYTHON -EvidenceDir "$env:SVI_PROBE_EVIDENCE/live-desktop"
       - name: Preserve the development installer
-        if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' && steps.product-install.outcome == 'success' }}
+        if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' && steps.product-install.outcome == 'success' && steps.live-ui.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-v002-development-${{ github.run_id }}
@@ -159,5 +190,14 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/installation/**/*.json
             ${{ runner.temp }}/svi-windows-evidence/installation/*.json
             ${{ runner.temp }}/svi-windows-evidence/synthetic-media/*.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/summary.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/prepared.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-register.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-ui.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/database-*.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/login-cleanup.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/postgres-cleanup-*.json
           if-no-files-found: warn
           retention-days: 1
