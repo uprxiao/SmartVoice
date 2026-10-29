@@ -322,11 +322,13 @@ impl Product {
                 )
             }
         };
-        if snapshot
-            .skipped
-            .iter()
-            .any(|s| s.reason != "synthesised_from_unicode_text")
-        {
+        if snapshot.skipped.iter().any(|s| {
+            ![
+                "synthesised_from_unicode_text",
+                "synthesised_bitmap_from_dib",
+            ]
+            .contains(&s.reason)
+        }) {
             return failed(
                 "TARGET_UNSUPPORTED",
                 "剪贴板格式无法安全保留，请复制结果后手动粘贴",

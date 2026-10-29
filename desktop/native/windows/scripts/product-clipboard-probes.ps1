@@ -1,6 +1,6 @@
 # Called while the production JSONL helper and independent fixtures are alive.
 # Every payload is fictional; only disposable CI clipboard contents may be replaced.
-foreach ($kind in @('unicode','html','rtf','dib','files','gdi-private','oversize')) {
+foreach ($kind in @('unicode','html','rtf','dib','files','gdi-private','oversize','bitmap','dib-conflict')) {
     Product-Case "TC-WIN-13-product-$kind" {
         $field = Fixture 'field' @{field='plain'}
         Focus-Target $field.pid
@@ -15,7 +15,7 @@ foreach ($kind in @('unicode','html','rtf','dib','files','gdi-private','oversize
         $independent = Fixture 'fieldState'
         $after = Native 'probeClipboardState'
         Write-NewJson @{kind=$kind;before=$before;result=$result;independent=$independent;after=$after} (Join-Path $OutputDir "product-clipboard-$kind.json")
-        $unsafe = $kind -in @('gdi-private','oversize')
+        $unsafe = $kind -in @('gdi-private','oversize','bitmap','dib-conflict')
         if ($unsafe) {
             Assert-Probe ($result.status -eq 'failed' -and $result.effect -eq 'none' -and $result.code -eq 'TARGET_UNSUPPORTED') 'Unsafe clipboard was not rejected before writing'
             Assert-Probe ($before.sequence -eq $after.sequence -and $independent.chords.Count -eq 0 -and $independent.value -ceq 'BEGIN React END') 'Unsafe clipboard/target changed on rejection'

@@ -69,6 +69,8 @@ S4 Windows 实测发现 POSIX 目录 fd 的 fsync 返回 EPERM。执行日志仍
 
 快照只复制可安全拥有的内存格式，复制总量上限 32 MiB；Unicode、HTML/RTF、DIB/文件列表按真实格式留存。GDI 句柄、不可复制/未知/超大格式在写之前拒绝，原内容不动并提示复制结果；本版不以丢弃格式换取自动粘贴。
 
+Windows 会在 DIB 后枚举合成的 CF_BITMAP。仅对原格式顺序以 DIB 开始、无调色板、受界检查的 BI_RGB32 内存图片，额外用 GetObject/GetDIBits 核实关联位图尺寸及每个 RGB 像素一致后，才将该关联项视为可由保留的 DIB 重建；DIB/DIBV5 原字节仍全部保存、恢复并比对。CF_BITMAP 为源、像素冲突、未知布局/颜色配置或无法读取时继续写前拒绝，不泛化跳过 GDI。依据：[系统合成格式与枚举顺序](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats)、[GetDIBits](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getdibits)。
+
 写入 `CF_UNICODETEXT`，同时写入 `ExcludeClipboardContentFromMonitorProcessing`、`CanIncludeInClipboardHistory=0`、`CanUploadToCloudClipboard=0`。原始快照、比较与写入在锁内，CloseClipboard 后重新锁定并确认所属窗口才登记发布版本；不能把关闭前的旧序号当发布版本。恢复时在同一个锁内比较版本再 Empty/Set，保留用户中途新内容。部分写入失败也仅恢复可证属本轮的版本；恢复异常明确反馈，不能用再次粘贴补救。Win+V/云行为和多格式保真仍须 S5 验证。
 
 ## 错误与业务契约

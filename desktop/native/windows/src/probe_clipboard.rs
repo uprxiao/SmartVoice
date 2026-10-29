@@ -90,7 +90,8 @@ pub fn seed(request: &Value) -> R<Value> {
                 data: b"{\\rtf1\\ansi {\\b React} \\u20013?\\u25991?}\0".to_vec(),
             },
         ),
-        "dib" => {
+        "bitmap" => entries.clear(),
+        "dib" | "dib-conflict" => {
             // BITMAPINFOHEADER, 2x2 bottom-up BGRA, BI_RGB. No real screenshot/image.
             let mut data = vec![0u8; 56];
             for (offset, value) in [(0, 40u32), (4, 2), (8, 2), (20, 16), (24, 3780), (28, 3780)] {
@@ -147,7 +148,37 @@ pub fn seed(request: &Value) -> R<Value> {
         ),
         _ => return Err("unknown clipboard fixture kind".into()),
     }
-    clip::write_entries(&entries)?;
+    let seeded_seq = clip::write_entries(&entries)?;
+    if matches!(kind, "bitmap" | "dib-conflict") {
+        // An actual HBITMAP, including a contradictory explicit bitmap after the original DIB.
+        // Do not let enumeration order alone turn a supplied GDI object into a safe conversion.
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, HGDIOBJ};
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, GetClipboardOwner, OpenClipboard, SetClipboardData,
+        };
+        unsafe {
+            let owner = GetClipboardOwner().map_err(|e| e.to_string())?;
+            OpenClipboard(Some(owner)).map_err(|e| e.to_string())?;
+            let result = (|| {
+                if clip::sequence() != seeded_seq {
+                    return Err("fixture clipboard changed".into());
+                }
+                let pixels = [0u8; 16];
+                let bitmap = CreateBitmap(2, 2, 1, 32, Some(pixels.as_ptr() as *const _));
+                if bitmap.is_invalid() {
+                    return Err("CreateBitmap fixture failed".into());
+                }
+                if let Err(error) = SetClipboardData(2, Some(HANDLE(bitmap.0))) {
+                    let _ = DeleteObject(HGDIOBJ(bitmap.0));
+                    return Err(error.to_string());
+                }
+                Ok(())
+            })();
+            let _ = CloseClipboard();
+            result?;
+        }
+    }
     let snapshot = clip::snapshot()?;
     let expected: Vec<Value> = entries
         .iter()

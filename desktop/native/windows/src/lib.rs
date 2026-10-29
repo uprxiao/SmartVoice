@@ -4,6 +4,7 @@
 //! (see docs/02-prd/windows-version-decision-20261029.md, section 5 and 6).
 #[cfg(windows)]
 pub mod clipboard;
+pub mod dib_policy;
 #[cfg(windows)]
 pub mod foreground;
 #[cfg(windows)]

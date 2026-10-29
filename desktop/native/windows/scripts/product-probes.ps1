@@ -6,7 +6,7 @@ foreach ($f in @('plain','editor')) { foreach ($p in @('selection','caret','empt
 foreach ($k in @('notepad','input','textarea')) { $plannedIds += "TC-WIN-01-product-$k" }
 foreach ($k in @('notepad','input','textarea')) { foreach ($p in @('caret','empty')) { $plannedIds += "TC-WIN-01-product-$k-$p" } }
 foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-06-07-product-$k" }
-foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize')) { $plannedIds += "TC-WIN-13-product-$k" }
+foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize','bitmap','dib-conflict')) { $plannedIds += "TC-WIN-13-product-$k" }
 foreach ($k in @('ignore','partial','caret','selection')) { $plannedIds += "TC-WIN-04-product-$k" }
 foreach ($id in @('TC-WIN-06-product-button','TC-WIN-10-product-invalid-lines','TC-WIN-10-product-eof','TC-WIN-10-product-oversize-line','TC-WIN-10-product-parent-exit','TC-WIN-11-product','TC-WIN-14-16-product')) { $plannedIds += $id }
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }

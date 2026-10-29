@@ -7,6 +7,10 @@ use crate::{ctx, wide, R};
 use serde::Serialize;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
+use windows::Win32::Graphics::Gdi::{
+    GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
+    DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
+};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
     GetClipboardFormatNameW, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard,
@@ -183,6 +187,70 @@ fn copy_global(h: HANDLE) -> Option<Vec<u8>> {
     }
 }
 
+// EnumClipboardFormats lists a supplied format before its automatically converted variants.
+// Only a DIB-first, palette-free bitmap with independently equal RGB pixels is reconstructible.
+// A bitmap-first clipboard or conflicting explicit bitmap remains a pre-write refusal.
+fn reproducible_bitmap(entries: &[Entry]) -> bool {
+    let Some(dib) = entries
+        .iter()
+        .find(|e| [CF_DIB.0 as u32, CF_DIBV5.0 as u32].contains(&e.format))
+        .and_then(|e| crate::dib_policy::rgb32(&e.data))
+    else {
+        return false;
+    };
+    unsafe {
+        let Ok(handle) = GetClipboardData(CF_BITMAP.0 as u32) else {
+            return false;
+        };
+        let mut bitmap = BITMAP::default();
+        if GetObjectW(
+            HGDIOBJ(handle.0),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut bitmap as *mut _ as *mut _),
+        ) != std::mem::size_of::<BITMAP>() as i32
+            || bitmap.bmWidth != dib.width
+            || bitmap.bmHeight != dib.height.unsigned_abs() as i32
+            || bitmap.bmPlanes != 1
+            || bitmap.bmBitsPixel != 32
+        {
+            return false;
+        }
+        let dc = GetDC(None);
+        if dc.is_invalid() {
+            return false;
+        }
+        let mut info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: dib.width,
+                biHeight: dib.height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: dib.pixels.len() as u32,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut actual = vec![0u8; dib.pixels.len()];
+        let lines = GetDIBits(
+            dc,
+            HBITMAP(handle.0),
+            0,
+            dib.height.unsigned_abs(),
+            Some(actual.as_mut_ptr() as *mut _),
+            &mut info,
+            DIB_RGB_COLORS,
+        );
+        ReleaseDC(None, dc);
+        lines == dib.height.unsigned_abs() as i32 && info.bmiHeader.biWidth == dib.width
+            && info.bmiHeader.biHeight == dib.height && info.bmiHeader.biBitCount == 32
+            && info.bmiHeader.biCompression == BI_RGB.0
+            // BI_RGB32's high byte is reserved. Original DIB/V5 bytes are separately retained exactly.
+            && actual.chunks_exact(4).zip(dib.pixels.chunks_exact(4)).all(|(a,b)| a[..3] == b[..3])
+    }
+}
+
 /// Capture every format we can copy as bytes. Handle-based GDI formats and the text/DIB variants
 /// Windows synthesises on its own are intentionally skipped (they come back by themselves).
 pub fn snapshot() -> R<Snapshot> {
@@ -200,6 +268,11 @@ pub fn snapshot() -> R<Snapshot> {
     let has_unicode = formats.contains(&CF_UNICODE);
     let mut entries = vec![];
     let mut skipped = vec![];
+    let source_image = formats
+        .iter()
+        .copied()
+        .find(|f| [CF_BITMAP.0 as u32, CF_DIB.0 as u32, CF_DIBV5.0 as u32].contains(f));
+    let no_palette = !formats.contains(&(CF_PALETTE.0 as u32));
     for f in formats {
         let name = format_name(f);
         let synthesized_text =
@@ -242,6 +315,17 @@ pub fn snapshot() -> R<Snapshot> {
                     name,
                     reason: "no_data_handle",
                 }),
+            }
+        }
+    }
+    if no_palette
+        && source_image.is_some_and(|f| f != CF_BITMAP.0 as u32)
+        && skipped.iter().any(|s| s.format == CF_BITMAP.0 as u32)
+        && reproducible_bitmap(&entries)
+    {
+        for skip in &mut skipped {
+            if skip.format == CF_BITMAP.0 as u32 {
+                skip.reason = "synthesised_bitmap_from_dib";
             }
         }
     }
