@@ -73,20 +73,39 @@ try {
     $start.Environment['SVI_USER_DATA']=Join-Path $env:RUNNER_TEMP "svi-product-user-$env:GITHUB_RUN_ID"
     $root=[System.Diagnostics.Process]::Start($start)
     $end=[DateTime]::UtcNow.AddSeconds(25)
+    $helperPreparation=[Collections.Generic.List[object]]::new()
+    $data.helper_identity_preparation=$helperPreparation
+    $seenHelpers=[Collections.Generic.HashSet[int]]::new()
+    $helperBirths=[Collections.Generic.Dictionary[int,long]]::new()
+    $metadataReady=$false
     do {
         if ($root.HasExited) { throw 'Background product exited during initialization' }
         $helpers=@(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($root.Id) AND Name = 'smartvoiceinput-input.exe'")
-        if ($helpers.Count -gt 0) { break }
+        $currentIds=@($helpers|ForEach-Object{[int]$_.ProcessId})
+        foreach($seen in $seenHelpers){if($seen -notin $currentIds){throw 'Observed product helper exited before its identity was confirmed'}}
+        $metadataReady=$helpers.Count -gt 0
+        foreach($helper in $helpers){
+            $null=$seenHelpers.Add([int]$helper.ProcessId)
+            $process=Get-Process -Id $helper.ProcessId -ErrorAction Stop
+            if($process.HasExited -or $process.StartTime -lt $root.StartTime){throw 'Observed helper lifecycle differs from the owned Main'}
+            $birth=$process.StartTime.ToUniversalTime().Ticks
+            if($helperBirths.ContainsKey([int]$helper.ProcessId) -and $helperBirths[[int]$helper.ProcessId] -ne $birth){throw 'Observed helper PID was reused before identity confirmation'}
+            $helperBirths[[int]$helper.ProcessId]=$birth
+            $image=$process.Path
+            $complete=(-not [string]::IsNullOrEmpty($helper.ExecutablePath) -and -not [string]::IsNullOrEmpty($helper.CommandLine) -and -not [string]::IsNullOrEmpty($image))
+            $helperPreparation.Add(@{pid=$helper.ProcessId;executable_path_present=(-not [string]::IsNullOrEmpty($helper.ExecutablePath));command_line_present=(-not [string]::IsNullOrEmpty($helper.CommandLine));independent_image_present=(-not [string]::IsNullOrEmpty($image));process_alive=$true})
+            if(-not $complete){$metadataReady=$false;continue}
+            if([IO.Path]::GetFullPath($helper.ExecutablePath) -ine [IO.Path]::GetFullPath($resources[0].FullName) -or [IO.Path]::GetFullPath($image) -ine [IO.Path]::GetFullPath($resources[0].FullName)){throw 'Main started an unexpected helper binary'}
+            if($helper.CommandLine -notmatch "--parent-pid\s+$($root.Id)(?:\s|$)"){throw 'Main omitted its parent identity'}
+        }
+        if ($metadataReady) { break }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $end)
-    if ($helpers.Count -eq 0) { throw 'Real Main/Renderer app.info never started the production helper' }
+    $data.helper_identity_preparation=$helperPreparation.ToArray()
+    if (-not $metadataReady) { throw 'Real Main/Renderer helper identity metadata was not complete within the original startup deadline' }
     $visible=@([SviProductWindows]::Visible($root.Id))
     $foreground=[SviProductWindows]::GetForegroundWindow().ToInt64()
     if ($visible.Count -ne 0 -or $foreground -ne $before) { throw 'Background startup showed/activated a window' }
-    foreach ($helper in $helpers) {
-        if ([IO.Path]::GetFullPath($helper.ExecutablePath) -ine [IO.Path]::GetFullPath($resources[0].FullName)) { throw 'Main started an unexpected helper binary' }
-        if ($helper.CommandLine -notmatch "--parent-pid\s+$($root.Id)(?:\s|$)") { throw 'Main omitted its parent identity' }
-    }
     $data.background=@{visible_count=$visible.Count;foreground_unchanged=($before -eq $foreground);helpers=$helpers.Count;real_bridge=$true}
     $rpcEvidence=Join-Path (Split-Path $EvidenceFile -Parent) 'product-rpc.json'
     $finalStartup=if ($LeaveStartupEnabled) { 'on' } else { 'off' }
@@ -131,17 +150,23 @@ try {
     $data.status='pass'
 } catch { $data.status='fail';$data.error=$_.Exception.Message;throw }
 finally {
+    $ownedStops=@()
     foreach ($process in @($second,$root)) {
-        if ($null -ne $process -and -not $process.HasExited) { $process.Kill($true);$process.WaitForExit(5000)|Out-Null }
+        if ($null -ne $process) {
+            try{if(-not $process.HasExited){$process.Kill($true)};$ownedStops+=@{exit_confirmed=$process.WaitForExit(5000)}}
+            catch{$ownedStops+=@{exit_confirmed=$false;error=$_.Exception.Message}}
+        }
     }
+    $data.owned_main_stops=$ownedStops
     $cleanup=@()
     foreach ($helper in $helpers) {
         $ended=$false
-        try { $process=Get-Process -Id $helper.ProcessId -ErrorAction Stop;$ended=$process.WaitForExit(2000) } catch { $ended=$true }
+        try { $process=Get-Process -Id $helper.ProcessId -ErrorAction Stop;$ended=$process.WaitForExit(2000) }
+        catch {if($_.FullyQualifiedErrorId -like 'NoProcessFoundForGivenId*'){$ended=$true}}
         $cleanup+=@{pid=$helper.ProcessId;exit_confirmed=$ended}
     }
     $data.cleanup=$cleanup
-    $cleanupFailed=@($cleanup | Where-Object { -not $_.exit_confirmed }).Count -gt 0
+    $cleanupFailed=@($cleanup | Where-Object { -not $_.exit_confirmed }).Count -gt 0 -or @($ownedStops|Where-Object{-not $_.exit_confirmed}).Count -gt 0
     if ($cleanupFailed) { $data.status='fail';$data.cleanup_error='helper termination not confirmed' }
     Write-NewJson $data $EvidenceFile
     if ($cleanupFailed) { throw 'Product helper cleanup not confirmed' }

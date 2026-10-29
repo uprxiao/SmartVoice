@@ -161,6 +161,16 @@ try {
         Assert-Probe ($before.sequence -eq $after.sequence -and $before.text -ceq $after.text) 'Product high-IL changed clipboard'
         return @{result=$result;before=$before;after=$after}
     }
+    $highRequestTemporary=Join-Path $OutputDir 'release-high.request.tmp'
+    Write-NewJson @{schema='svi-release-owned-high-v1';high_pid=$HighTargetId;after_case='TC-WIN-05-product'} $highRequestTemporary
+    [IO.File]::Move($highRequestTemporary,(Join-Path $OutputDir 'release-high.request.json'))
+    $highReleaseFile=Join-Path $OutputDir 'release-high.response.json';$highReleaseEnd=[DateTime]::UtcNow.AddSeconds(5)
+    while(-not (Test-Path $highReleaseFile)){
+        if([DateTime]::UtcNow -ge $highReleaseEnd){throw 'Owned High fixture cleanup was not confirmed; no later foreground preparation attempted'}
+        Start-Sleep -Milliseconds 20
+    }
+    $highRelease=Get-Content -Raw $highReleaseFile|ConvertFrom-Json
+    Assert-Probe ($highRelease.schema -eq 'svi-release-owned-high-v1' -and $highRelease.high_pid -eq $HighTargetId -and $highRelease.original_owned_exit_confirmed) 'Owned High fixture cleanup identity differs'
     foreach ($name in @('password','readonly','unreadable')) {
         Product-Case "TC-WIN-06-07-product-$name" {
             $field = Fixture 'field' @{field=$name}

@@ -80,8 +80,34 @@ if (-not $Worker) {
         [System.IO.File]::WriteAllText($highFile, 'HIGH fixture must remain unchanged', $Utf8)
         $high = Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($highFile)
         $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
-        & $Verify --medium $pwsh -NoProfile -File $PSCommandPath -Worker -OutputDir $OutputDir -FixtureExe $FixtureExe -ChromeExe $ChromeExe -CodeExe $CodeExe -HighTargetId $high.Id
-        $workerCode = $LASTEXITCODE
+        # Keep control of our High fixture while Medium runs. After the last
+        # High-target case, close that exact owned process so it cannot become
+        # foreground again when a later Medium Notepad is destroyed.
+        $workerInfo=[Diagnostics.ProcessStartInfo]::new($Verify)
+        $workerInfo.UseShellExecute=$false;$workerInfo.CreateNoWindow=$true
+        $workerInfo.RedirectStandardOutput=$true;$workerInfo.RedirectStandardError=$true
+        foreach($arg in @('--medium',$pwsh,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-FixtureExe',$FixtureExe,'-ChromeExe',$ChromeExe,'-CodeExe',$CodeExe,'-HighTargetId',[string]$high.Id)){$workerInfo.ArgumentList.Add($arg)}
+        $worker=[Diagnostics.Process]::Start($workerInfo);$script:Owned.Add($worker)
+        $workerOut=$worker.StandardOutput.ReadToEndAsync();$workerErr=$worker.StandardError.ReadToEndAsync()
+        $releaseRequest=Join-Path $OutputDir 'release-high.request.json';$released=$false
+        while(-not $worker.HasExited){
+            if(-not $released -and (Test-Path $releaseRequest)){
+                $request=Get-Content -Raw $releaseRequest|ConvertFrom-Json
+                Assert-Probe ($request.schema -eq 'svi-release-owned-high-v1' -and $request.high_pid -eq $high.Id -and $request.after_case -eq 'TC-WIN-05-product') 'Invalid owned High release request'
+                Stop-OneOwned $high
+                $temporary=Join-Path $OutputDir 'release-high.response.tmp'
+                Write-NewJson @{schema='svi-release-owned-high-v1';original_owned_exit_confirmed=$true;high_pid=$high.Id} $temporary
+                [IO.File]::Move($temporary,(Join-Path $OutputDir 'release-high.response.json'))
+                $released=$true
+            }
+            Start-Sleep -Milliseconds 50
+        }
+        $worker.WaitForExit();$workerCode=$worker.ExitCode
+        $streams=@{stdout_complete=$workerOut.Wait(1000);stderr_complete=$workerErr.Wait(1000)}
+        Write-NewJson $streams (Join-Path $OutputDir 'medium-wrapper-streams.json')
+        Assert-Probe ($streams.stdout_complete -and $streams.stderr_complete) 'Medium wrapper output handles did not close after owned worker exit'
+        [IO.File]::WriteAllText((Join-Path $OutputDir 'medium-wrapper.stdout.txt'),$workerOut.GetAwaiter().GetResult())
+        [IO.File]::WriteAllText((Join-Path $OutputDir 'medium-wrapper.stderr.txt'),$workerErr.GetAwaiter().GetResult())
         Write-NewJson @{exit_code=$workerCode;summary_present=(Test-Path (Join-Path $OutputDir 'summary.json'))} (Join-Path $OutputDir 'worker-launch.json')
         Assert-Probe (Test-Path (Join-Path $OutputDir 'summary.json')) "Worker did not produce summary (exit $workerCode); keep parent preflight and failure"
         $report = Get-Content -Raw (Join-Path $OutputDir 'summary.json')
