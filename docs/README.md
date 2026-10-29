@@ -9,7 +9,7 @@
 | V1（口述、整理、插入、词库与修改学习、历史统计、管理后台） | 已完成开发与验收 |
 | V2（云端 ASR provider、后台模型服务管理） | 已完成开发与验收 |
 | 辅助功能未授权提示（TC-INSERT-22） | 已完成，随 v0.0.1 发布 |
-| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围与技术验证决策稿](02-prd/windows-version-decision-20261029.md)已于 2026-10-29 由本人确认；**技术验证工具已准备并通过本地检查，待 Windows 实际执行，未进入 S4**。Windows 专属 S0 原型、S1 正式条款修订、S2 设计、S3 用例尚未完成；9 项阻断验证通过后依次补齐并评审。接续入口见[验证说明](03-architecture/windows-technical-verification.md) |
+| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围与技术验证决策稿](02-prd/windows-version-decision-20261029.md)已于 2026-10-29 由本人确认；**技术验证进行中，Windows 编译及独立验证包构建已通过，行为验证尚未闭合，未进入 S4**。Windows 专属 S0 原型、S1 正式条款修订、S2 设计、S3 用例尚未完成；9 项阻断验证通过后依次补齐并评审。接续入口见[验证说明](03-architecture/windows-technical-verification.md) |
 | 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划顺延到 v0.0.3（v0.0.2 先做 Windows 版） |
 
 已知限制：Mac 预览包未经 Apple 签名与公证；Windows 安装包未签名，完整业务验收未完成；长期稳定性待上线后跟踪。
@@ -26,5 +26,5 @@
 
 ## 待决问题
 
-- Windows 版本（v0.0.2）范围与 Q1–Q7 已确认，不重复请求评审；当前待办是[技术验证](03-architecture/windows-technical-verification.md)。独立探针已补齐，通过 Windows 交叉检查和 7 项策略单测；Windows 运行尚未开始，未记录任何阻断项通过。技术验证程序不等于产品开发完成，既有通用 PRD/设计/用例与 v0.0.3 学习草稿不替代 Windows 专属 S0–S3。推送开发分支及执行远端验证仍按 AGENTS §7.3 授权范围进行。
+- Windows 版本（v0.0.2）范围与 Q1–Q7 已确认，不重复请求评审；本人于 2026-10-29 明确授权推送并按既定门禁继续 S0–S4，同范围验证修复沿用该授权。当前待办是[技术验证](03-architecture/windows-technical-verification.md)：本地检查及 Windows 构建已通过，首轮在环境记录步骤失败，修复后重跑；未记录行为阻断项通过。既有通用 PRD/设计/用例与 v0.0.3 学习草稿不替代 Windows 专属 S0–S3。
 - 快速纠正学习 S1 [需求变更](02-prd/fast-correction-learning-decision-20261028.md)、S2 [技术方案](03-architecture/fast-correction-learning-design-20261028.md)、S3 用例（TC-LEARN-16～31）待本人评审后进入开发。

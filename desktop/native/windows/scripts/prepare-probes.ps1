@@ -1,6 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$EnvironmentFile)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'probe-files.ps1')
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Preparation is restricted to a disposable GitHub runner' }
 
 $chrome = @(
@@ -43,7 +44,7 @@ $environment = @{
     helper=@{sha256=(Get-FileHash $helper -Algorithm SHA256).Hash;packaged_sha256=(Get-FileHash $packagedHelper -Algorithm SHA256).Hash}
     planned=15;blocking_planned=9;inputs=$files;data='fictional fixtures only; no account, audio, model or service calls'
 }
-$environment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $EnvironmentFile -Encoding utf8NoBOM -NoClobber
+Write-NewJson $environment $EnvironmentFile
 "SVI_PROBE_CHROME=$chrome" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 "SVI_PROBE_CODE=$code" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 "SVI_PROBE_FIXTURE=$fixture" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append

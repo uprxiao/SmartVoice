@@ -17,14 +17,7 @@ $script:FixtureCallId = 0
 $script:CleanupConfirmed = $true
 $script:Cleanup = [System.Collections.Generic.List[object]]::new()
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
-
-function Write-NewJson($Value, [string]$File) {
-    $stream = [System.IO.File]::Open($File, [System.IO.FileMode]::CreateNew)
-    try {
-        $bytes = $Utf8.GetBytes(($Value | ConvertTo-Json -Depth 40))
-        $stream.Write($bytes, 0, $bytes.Length)
-    } finally { $stream.Dispose() }
-}
+. (Join-Path $PSScriptRoot 'probe-files.ps1')
 function Assert-Probe([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
