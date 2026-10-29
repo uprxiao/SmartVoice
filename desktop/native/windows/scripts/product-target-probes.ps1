@@ -148,7 +148,15 @@ Product-Case 'TC-WIN-15-product-slow-uia' {
     $final=Native 'probeClipboardState';$actual=Fixture 'fieldState'
     Assert-Probe (-not $result.clipboardRestored -and $final.sequence -eq $external.sequence -and $final.text -ceq 'SVI intervening clipboard' -and $actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1 -and $actual.enterCount -eq 0) 'Slow UIA clipboard handling changed external data or repeated paste'
     Write-NewJson @{publication=$publication;block=$block;copy_ms=$copyMs;elapsed_ms=$watch.ElapsedMilliseconds;result=$result;external=$external;final=$final;actual=$actual} (Join-Path $OutputDir 'product-slow-uia.json')
+    $script:SlowUiaEvidence=@{result=$result;elapsed_ms=$watch.ElapsedMilliseconds;provider_block_ms=$block.duration_ms;copy_ms=$copyMs;actual=$actual}
     return @{result=$result;copy_ms=$copyMs;actual=$actual;final=$final;scope='independent fixture main/UIA thread blocked after actual paste; clipboard owner must keep pumping'}
+}
+Product-Case 'TC-WIN-04-product-late-readback' {
+    if($null -eq $script:SlowUiaEvidence){throw 'BLOCKED: actual slow UIA interval was not obtained'}
+    $evidence=$script:SlowUiaEvidence
+    Assert-Probe ($evidence.provider_block_ms -eq 2000 -and $evidence.elapsed_ms -gt 1350) 'Actual readback did not exceed the frozen 350ms+1000ms budget'
+    Assert-Probe ($evidence.result.status -eq 'unverified' -and $evidence.result.effect -eq 'unknown' -and -not $evidence.result.observable) 'Late UIA readback was accepted after the 1000ms verification budget'
+    return $evidence
 }
 foreach($lineEnding in @('lf','crlf')) {
     Product-Case "TC-WIN-01-product-electron-$lineEnding" {
