@@ -67,6 +67,11 @@ if (-not $Worker) {
         $workerCode = $LASTEXITCODE
         Write-NewJson @{exit_code=$workerCode;summary_present=(Test-Path (Join-Path $OutputDir 'summary.json'))} (Join-Path $OutputDir 'worker-launch.json')
         Assert-Probe (Test-Path (Join-Path $OutputDir 'summary.json')) "Worker did not produce summary (exit $workerCode); keep parent preflight and failure"
+        $report = Get-Content -Raw (Join-Path $OutputDir 'summary.json')
+        Write-Host $report
+        foreach ($item in (Get-Content -Raw (Join-Path $OutputDir 'cases.json') | ConvertFrom-Json -AsHashtable)) {
+            Write-Host "$($item.id): $($item.status) $($item.detail['error'])"
+        }
         if ($workerCode -ne 0) { throw "Windows technical gate not passed (exit $workerCode); inspect complete report" }
     } catch {
         Write-NewJson @{error=$_.Exception.Message;at=[DateTime]::UtcNow.ToString('o')} (Join-Path $OutputDir 'parent-failure.json')
@@ -254,6 +259,7 @@ try {
         return @{cases=$parameters}
     }
     Case 'V-04' {
+        Assert-Probe ($env:SVI_MODIFIER_POLICY_CHECKED -eq '1') 'BLOCKED: modifier provenance policy tests were not confirmed before Windows behavior probes'
         $field = Fixture 'field' @{field='editor'}
         Focus-Target $field.pid
         Start-Sleep -Milliseconds 200
@@ -266,7 +272,8 @@ try {
         Assert-Probe ($result.status -eq 'inserted') 'Held-modifier paste was not verified'
         Assert-Probe ($actual.chords.Count -eq 1 -and $actual.chords[0].ctrl -and -not $actual.chords[0].shift -and -not $actual.chords[0].alt -and -not $actual.chords[0].meta) 'Target did not receive exactly one plain Ctrl+V'
         Assert-Probe ($result.held_modifiers_after.Count -eq 0) 'Injected modifier remains down'
-        return @{held=$hold;result=$result;target=$actual;case_status='partial';reason='injected residue checked; physical hold/release restoration needs manual Windows evidence'}
+        Assert-Probe ($hold.held -contains 162 -and $hold.held -contains 160 -and $result.neutralised_modifiers -contains 162 -and $result.neutralised_modifiers -contains 160) 'Both held modifiers were not actually neutralised'
+        return @{held=$hold;result=$result;target=$actual;release_cleanup=$released;scope='phase1 injected held state + target event + policy unit tests';policy_tests='modifier_policy::{injected_neutralisation_does_not_erase_physical_provenance,physical_release_before_restore_never_synthesises_that_key_down,startup_state_is_unknown_until_a_noninjected_transition}';physical_keyboard_verified=$false;physical_keyboard_required_at='S5';decision='2026-10-29 owner approved layered verification'}
     }
     Case 'V-06' {
         $cycle = Native 'probeClipboardCycle'

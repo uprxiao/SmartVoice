@@ -52,6 +52,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --lib --manifest-path desktop/native/windows/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "SVI_MODIFIER_POLICY_CHECKED=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           cargo build --locked --release --bins --manifest-path desktop/native/windows/Cargo.toml
           exit $LASTEXITCODE
       - name: Save compiled probe dependencies
@@ -95,6 +96,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-probes-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/svi-windows-evidence/
+          path: |
+            ${{ runner.temp }}/svi-windows-evidence/*.json
+            ${{ runner.temp }}/svi-windows-evidence/run/*.json
+            ${{ runner.temp }}/svi-windows-evidence/run/*.jsonl
+            ${{ runner.temp }}/svi-windows-evidence/run/*.txt
+            ${{ runner.temp }}/svi-windows-evidence/run/fixture-rpc/*.json
+            ${{ runner.temp }}/svi-windows-evidence/run/fixture-rpc/*.png
           if-no-files-found: warn
           retention-days: 1

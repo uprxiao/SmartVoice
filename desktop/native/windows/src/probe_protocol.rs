@@ -104,6 +104,14 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             }
             keys::down(windows::Win32::UI::Input::KeyboardAndMouse::VK_LCONTROL);
             keys::down(windows::Win32::UI::Input::KeyboardAndMouse::VK_LSHIFT);
+            let end = std::time::Instant::now() + std::time::Duration::from_millis(200);
+            while std::time::Instant::now() < end {
+                let held = keys::held_modifiers();
+                if held.contains(&0xA2) && held.contains(&0xA0) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
             Ok(json!({"held":keys::held_modifiers()}))
         }
         "probeReleaseModifiers" => {

@@ -33,10 +33,15 @@ fn run() -> svi_input_win::R<()> {
                 GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
             };
             let rid = svi_input_win::integrity::own_rid()?;
-            let environment_present = ["CARGO_TARGET_DIR", "GITHUB_ACTIONS", "SVI_PROBE_EVIDENCE"]
-                .iter()
-                .map(|key| (*key, std::env::var_os(key).is_some()))
-                .collect::<std::collections::BTreeMap<_, _>>();
+            let environment_present = [
+                "CARGO_TARGET_DIR",
+                "GITHUB_ACTIONS",
+                "SVI_PROBE_EVIDENCE",
+                "SVI_MODIFIER_POLICY_CHECKED",
+            ]
+            .iter()
+            .map(|key| (*key, std::env::var_os(key).is_some()))
+            .collect::<std::collections::BTreeMap<_, _>>();
             let report = serde_json::json!({"pid":std::process::id(),"integrity_rid":rid,
                 "integrity":svi_input_win::integrity::level_name(rid),
                 "input_desktop_accessible":svi_input_win::foreground::input_desktop_accessible(),
