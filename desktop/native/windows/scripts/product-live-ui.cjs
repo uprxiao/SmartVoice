@@ -55,10 +55,10 @@ async function caseRun(id,body){
   row.ended_at=new Date().toISOString();
 }
 async function closeSettings(){if(await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`))await click('[aria-label="关闭设置"]');}
-const storageExpression=`({localKeys:Object.keys(localStorage),sessionKeys:Object.keys(sessionStorage),cookie:document.cookie})`;
+const storageExpression=`(()=>{const localKeys=Object.keys(localStorage),sessionKeys=Object.keys(sessionStorage);const cookieNames=document.cookie.split(';').map(item=>item.split('=')[0].trim()).filter(Boolean);const values=[...localKeys.map(key=>localStorage.getItem(key)),...sessionKeys.map(key=>sessionStorage.getItem(key)),document.cookie];return {localKeys,sessionKeys,cookieNames,credentialValueDetected:values.some(value=>/eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+/.test(String(value)))};})()`;
 async function privacy(){
   const state=await evaluate(storageExpression);
-  check(![...state.localKeys,...state.sessionKeys].some(k=>/auth|token|password|credential/i.test(k))&&!/auth|token/i.test(state.cookie),'Renderer contains persisted authentication material');
+  check(![...state.localKeys,...state.sessionKeys].some(k=>/auth|token|password|credential/i.test(k))&&state.cookieNames.length===0&&!state.credentialValueDetected,'Renderer contains persisted authentication material');
   return state;
 }
 (async()=>{

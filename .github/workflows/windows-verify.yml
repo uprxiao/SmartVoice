@@ -92,6 +92,18 @@ jobs:
         shell: pwsh
         run: |
           ./desktop/native/windows/scripts/run-probes.ps1 -OutputDir "$env:SVI_PROBE_EVIDENCE/run" -FixtureExe $env:SVI_PROBE_FIXTURE -ChromeExe $env:SVI_PROBE_CHROME -CodeExe $env:SVI_PROBE_CODE
+      - name: Preserve native results before independent product integration
+        if: ${{ !cancelled() && steps.probes.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/svi-windows-evidence/run/product-cases.json
+            ${{ runner.temp }}/svi-windows-evidence/run/product-own-restore.json
+            ${{ runner.temp }}/svi-windows-evidence/run/product-slow-uia.json
+            ${{ runner.temp }}/svi-windows-evidence/run/summary.json
+          if-no-files-found: warn
+          retention-days: 1
       - name: Prepare the locked product Electron runtime
         id: product-runtime
         if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
