@@ -1,4 +1,6 @@
-2026-10-28快速纠正学习补充（S1待评审）：纠正后正常发送即判定学习，以“读取前安静≥M且读取到发送键之间无其他按键”作为最终修改依据，宁漏不错；输入法状态未知时以此代替一律不学；冻结的学习不被下一句取消；Electron应用读不到时开启其辅助功能；首页学习卡片显示最近一次结果。实验依据docs/04-test/fast-learning-b-feasibility-20261028.md，规则见docs/02-prd/fast-correction-learning-decision-20261028.md。
+2026-10-29 Windows v0.0.2：正式平台约束见 [WIN-01～12](windows-v002-requirements.md)，依据本人已确认的范围与 Q1–Q7，条款一致性复核完成；Windows 本版不新增修改观察，Mac 现有学习保持。技术门禁已通过，继续 S2，尚未进入 S4。
+
+2026-10-28快速纠正学习补充（S1待评审，顺延 v0.0.3）：纠正后正常发送即判定学习，以“读取前安静≥M且读取到发送键之间无其他按键”作为最终修改依据，宁漏不错；输入法状态未知时以此代替一律不学；冻结的学习不被下一句取消；Electron应用读不到时开启其辅助功能；首页学习卡片显示最近一次结果。实验依据docs/04-test/fast-learning-b-feasibility-20261028.md，规则见docs/02-prd/fast-correction-learning-decision-20261028.md。
 
 2026-10-28辅助功能引导补充：本人首装后口述无提示、无输入，定位为从不主动申请权限、失败提示只在被遮挡主窗口、权限错误码降级。改为：登录后未授权时每进程最多自动弹一次系统授权框；开始录音时未授权则HUD显示“未开启辅助功能，结果不会自动输入”及“去授权”，不阻断录音；自动输入failed时HUD保留失败卡片（复制结果/去授权/关闭，8秒自动关），unverified不弹；回执PERMISSION_REQUIRED归PERMISSION_DENIED。HUD提示为对2026-10-20录音区不重复权限警告的补充（仅非激活HUD）。见docs/02-prd/accessibility-onboarding-decision-20261028.md，验收TC-INSERT-22。
 
@@ -127,10 +129,10 @@ ready/review/inserted → preparing：可直接开始下一段，不要求先复
 | 编号 | 需求 |
 |---|---|
 | FR-04-01 | 正常听写以实际粘贴前的最新光标位置为准；录音、等待结果及结果返回后到实际粘贴前均可切换应用或输入框，不能因旧目标改变而拒绝 |
-| FR-04-02 | 按实际粘贴前的最终位置统一一次Command-V，由目标处理当前选区，不使用旧快照重写全文；无需应用正向名单，控件/正文不可读时可尝试但固定未核验、不学习/重试；已知受限状态及前台边界见[通用规则](universal-paste-decision-20261027.md)，实际包回归待完成 |
+| FR-04-02 | 按实际粘贴前的最终位置统一一次粘贴（macOS Command-V、Windows Ctrl+V），由目标处理当前选区，不使用旧快照重写全文；无需应用正向名单，控件/正文不可读时可尝试但固定未核验、不学习/重试；已知受限状态及前台边界见[通用规则](universal-paste-decision-20261027.md)与 [WIN-01～04](windows-v002-requirements.md)，实际包回归待完成 |
 | FR-04-03 | 校验失败时保留结果，提供复制/重新指定，不自动重试 |
 | FR-04-04 | 不自动按 Enter，不自动发送；终端与其他可输入目标统一粘贴一次（2026-10-27本人决定），正文原有换行由目标程序处理 |
-| FR-04-05 | macOS 使用 Accessibility；Windows 使用 UI Automation |
+| FR-04-05 | macOS 使用 Accessibility/CGEvent；Windows 使用 UI Automation/SendInput，经典控件可补只读 Win32 选区；原生能力、保护边界和严格读回见 [Windows 需求](windows-v002-requirements.md) |
 
 ### FR-05 词库
 
