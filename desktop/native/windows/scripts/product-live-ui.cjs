@@ -4,16 +4,18 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const WebSocket=require('ws');
+const {spawn}=require('node:child_process');
+const {createInterface}=require('node:readline');
 const [port,environmentFile,output,phase]=process.argv.slice(2);
-if(process.env.GITHUB_ACTIONS!=='true'||!/^\d{1,5}$/.test(port||'')||!['register','boot','logout','admin'].includes(phase))throw Error('Owned CI phase required');
+if(process.env.GITHUB_ACTIONS!=='true'||!/^\d{1,5}$/.test(port||'')||!['register','boot','logout','admin','history','admin-history'].includes(phase))throw Error('Owned CI phase required');
 const root=path.resolve(__dirname,'../../../..');
 const fixture=JSON.parse(fs.readFileSync(environmentFile,'utf8'));
 if(fixture.schema!=='svi-desktop-live-environment-v1'||path.resolve(fixture.source_root)!==root||path.resolve(fixture.run_dir)!==path.dirname(path.resolve(environmentFile))||fixture.origin!=='http://127.0.0.1:17863'||path.resolve(fixture.private_file)!==path.join(path.resolve(fixture.run_dir),'credentials.private.json'))throw Error('Owned fixture mismatch');
 const credentials=JSON.parse(fs.readFileSync(fixture.private_file,'utf8'));
 const email='desktop-live@example.test';
-const planned=phase==='register'?['LIVE-DESKTOP-01','LIVE-DESKTOP-02','LIVE-DESKTOP-03','LIVE-DESKTOP-04','LIVE-DESKTOP-05']:phase==='boot'?['LIVE-DESKTOP-06']:phase==='logout'?['LIVE-DESKTOP-07']:['LIVE-ADMIN-01','LIVE-ADMIN-02','LIVE-ADMIN-03'];
+const planned=phase==='register'?['LIVE-DESKTOP-01','LIVE-DESKTOP-02','LIVE-DESKTOP-03','LIVE-DESKTOP-04','LIVE-DESKTOP-05']:phase==='boot'?['LIVE-DESKTOP-06']:phase==='logout'?['LIVE-DESKTOP-07']:phase==='history'?['LIVE-HISTORY-01','LIVE-HISTORY-02','LIVE-HISTORY-03','LIVE-HISTORY-04']:phase==='admin-history'?['LIVE-ADMIN-HISTORY-01']:['LIVE-ADMIN-01','LIVE-ADMIN-02','LIVE-ADMIN-03'];
 const report={phase,scope:'actual Main/preload + loopback HTTP/PostgreSQL; real DOM input, mock providers, no product audio/model/S5 pass',planned:planned.length,cases:planned.map(id=>({id,status:'not_run'}))};
-let socket,sequence=0;const pending=new Map();const loginResponses=[];
+let socket,sequence=0,native,nativeExit,nativeSequence=0;const pending=new Map(),nativePending=new Map();const loginResponses=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(ok,message)=>{if(!ok)throw Error(message);};
 async function cdp(method,params={}){
@@ -61,6 +63,30 @@ async function caseRun(id,body){
   row.ended_at=new Date().toISOString();
 }
 async function closeSettings(){if(await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`))await click('[aria-label="关闭设置"]');}
+async function startOwnedProbe(){
+  const targets=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'history-targets.json'),'utf8'));
+  check(process.platform==='win32'&&targets.schema==='svi-history-targets-v1'&&targets.notepad_image_verified===true&&targets.controller_owns_process_objects===true&&Number.isInteger(targets.main_pid)&&Number.isInteger(targets.notepad_pid)&&targets.main_pid>0&&targets.notepad_pid>0&&targets.main_pid!==targets.notepad_pid,'Explicit owned OS targets required');
+  const executable=path.join(process.env.CARGO_TARGET_DIR,'release/svi-windows-probe.exe');
+  check(fs.statSync(executable).isFile(),'Independent compiled observer unavailable');
+  native=spawn(executable,[],{windowsHide:true,env:{...process.env,SVI_WINDOWS_PROBE:'1'},stdio:['pipe','pipe','ignore']});
+  const rejectNative=()=>{for(const request of nativePending.values()){clearTimeout(request.timer);request.reject(Error('Independent probe closed'));}nativePending.clear();};
+  nativeExit=new Promise(resolve=>native.once('close',(code,signal)=>{rejectNative();resolve({code,signal});}));
+  native.on('error',rejectNative);native.stdin.on('error',rejectNative);
+  createInterface({input:native.stdout}).on('line',line=>{let value;try{value=JSON.parse(line);}catch{return;}const request=nativePending.get(value.id);if(!request)return;clearTimeout(request.timer);nativePending.delete(value.id);value.error?request.reject(Error('Independent OS preparation/readback failed: '+value.error.message)):request.resolve(value);});
+  report.native_actions=[];
+  return targets;
+}
+async function observeOS(action,data={}){
+  check(['ping','probeFocus','probeSelect','capture','probeSeedClipboard','probeClipboardState'].includes(action),'OS control action outside frozen preparation/readback scope');
+  const request={id:++nativeSequence,action,...data};
+  const response=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{nativePending.delete(request.id);reject(Error('Independent OS preparation/readback timeout'));},6500);nativePending.set(request.id,{resolve,reject,timer});native.stdin.write(JSON.stringify(request)+'\n');});
+  report.native_actions.push({request,response});return response;
+}
+async function notepadFacts(targets){
+  check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
+  return (await observeOS('capture',{fixture_pid:targets.notepad_pid})).readback;
+}
+function exactNative(actual,text,caret,selection){check(actual?.text===text&&actual.caret_utf16===caret&&actual.selection_utf16_len===selection,'Independent Notepad full text/caret/selection differs');}
 const storageExpression=`(()=>{const localKeys=Object.keys(localStorage),sessionKeys=Object.keys(sessionStorage);const cookieNames=document.cookie.split(';').map(item=>item.split('=')[0].trim()).filter(Boolean);const values=[...localKeys.map(key=>localStorage.getItem(key)),...sessionKeys.map(key=>sessionStorage.getItem(key)),document.cookie];return {localKeys,sessionKeys,cookieNames,credentialValueDetected:values.some(value=>/eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+/.test(String(value)))};})()`;
 async function privacy(){
   const state=await evaluate(storageExpression);
@@ -69,7 +95,8 @@ async function privacy(){
 }
 (async()=>{
   let page;
-  const expected=phase==='admin'?fixture.origin+'/admin/':pathToFileURL(path.join(root,'desktop/out/renderer/index.html')).href;
+  const adminPhase=phase==='admin'||phase==='admin-history';
+  const expected=adminPhase?fixture.origin+'/admin/':pathToFileURL(path.join(root,'desktop/out/renderer/index.html')).href;
   for(let i=0;i<200;i++){
     try{page=(await(await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(p=>p.type==='page'&&p.url===expected);if(page)break;}catch{}
     await pause(100);
@@ -79,7 +106,7 @@ async function privacy(){
   socket.on('message',bytes=>{const data=JSON.parse(bytes.toString());if(data.method==='Network.responseReceived'&&new URL(data.params.response.url).pathname==='/api/auth/login')loginResponses.push(data.params.response.status);const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(Error(data.error.message)):request.resolve(data.result);});
   await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});
   let info;
-  if(phase!=='admin'){
+  if(!adminPhase){
     info=await evaluate(`window.electronAPI.invoke('app.info')`); // Read-only Main API precondition before credentials.
     check(info.platform==='win32'&&info.apiBaseUrl===fixture.origin,'Refusing credentials outside the owned loopback Main service');
   }
@@ -107,6 +134,63 @@ async function privacy(){
     await caseRun('LIVE-DESKTOP-06',async()=>{await until(`Boolean(document.querySelector('nav'))&&document.body.innerText.includes(${JSON.stringify(email)})`);check(!await evaluate(`document.body.innerText.includes('仅本次内存登录')`),'Restored account fell back to memory only');check(!await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`),'Restoring an account unexpectedly opened a permission guide');return{restored_without_retyping_password:true,email,storage:await privacy()};});
   }else if(phase==='logout'){
     await caseRun('LIVE-DESKTOP-07',async()=>{await closeSettings();await click('button[title="退出登录"]');await until(`Boolean(document.querySelector('input[type=email]'))&&!document.querySelector('nav')`);return{logged_out:true,storage:await privacy()};});
+  }else if(phase==='history'){
+    const seeded=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'history-seed.json'),'utf8'));
+    check(seeded.review_flag_prepared_by_fixture===true&&seeded.refined_text==='帮我加一个按钮，不要修改数据库。','Frozen fictional history fixture differs');
+    const targets=await startOwnedProbe();
+    check((await observeOS('ping')).integrity_rid===8192,'Independent observer must be Medium');
+    await caseRun('LIVE-HISTORY-01',async()=>{
+      await until(`Boolean(document.querySelector('input[type=email]'))`);
+      await fill('input[type=email]',email);await fill('input[type=password]',credentials.password);await click('form button[type=submit]');
+      await until(`Boolean(document.querySelector('nav'))&&document.body.innerText.includes(${JSON.stringify(email)})`);
+      if(info.microphone.status==='denied')await until(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`);
+      await closeSettings();await button('历史记录','nav');
+      await until(`[...document.querySelectorAll('button')].filter(e=>e.textContent.trim()==='重新整理').length===1`);
+      await button('重新整理');
+      await until(`document.body.innerText.includes(${JSON.stringify(seeded.refined_text)})&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)&&document.body.innerText.includes('重新指定输入目标')`);
+      return{real_history_refine_retry:true,automatic_insertion:false,scope:'synthetic history prepared through owned HTTP/WS; explicit review flag fixture, no microphone/quality pass',storage:await privacy()};
+    });
+    await caseRun('LIVE-HISTORY-02',async()=>{
+      if(report.cases[0].status!=='pass')throw Error('BLOCKED: actual history retry did not establish the ready result');
+      check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
+      await observeOS('probeSelect',{fixture_pid:targets.notepad_pid,start:0,length:0});
+      exactNative(await notepadFacts(targets),'BEGIN React END',0,0);
+      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await button('插入到当前输入框');
+      await until(`[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='重新指定目标'&&!e.disabled)`);
+      exactNative(await notepadFacts(targets),'BEGIN React END',0,0);
+      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await button('重新指定目标');
+      check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
+      await observeOS('probeSelect',{fixture_pid:targets.notepad_pid,start:6,length:5});
+      exactNative((await observeOS('capture',{fixture_pid:targets.notepad_pid})).readback,'BEGIN React END',6,5);
+      await until(`document.querySelector('aside.home-sidebar')?.innerText.includes(${JSON.stringify('PID '+targets.notepad_pid)})&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
+      await observeOS('probeSeedClipboard');
+      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await button('插入到当前输入框');
+      await until(`document.body.innerText.includes('已插入到目标输入框')&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
+      const actual=await notepadFacts(targets);exactNative(actual,seeded.expected_native_text,seeded.expected_caret_utf16,0);
+      const clip=await observeOS('probeClipboardState');check(clip.text==='SVI original clipboard','Product did not restore original owned clipboard');
+      return{real_dom_manual_insert:true,independent_notepad:actual,clipboard_restored:true,exact_target_restored_from_owned_main:true};
+    });
+    await caseRun('LIVE-HISTORY-03',async()=>{
+      if(report.cases[1].status!=='pass')throw Error('BLOCKED: first actual insertion did not pass');
+      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await button('插入到当前输入框');await pause(200);
+      await until(`[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
+      const actual=await notepadFacts(targets);exactNative(actual,seeded.expected_native_text,seeded.expected_caret_utf16,0);
+      return{repeat_actual_click_did_not_rewrite:true,independent_notepad:actual};
+    });
+    await caseRun('LIVE-HISTORY-04',async()=>{await closeSettings();await click('button[title="退出登录"]');await until(`Boolean(document.querySelector('input[type=email]'))&&!document.querySelector('nav')`);return{logged_out:true,storage:await privacy()};});
+  }else if(phase==='admin-history'){
+    await caseRun('LIVE-ADMIN-HISTORY-01',async()=>{
+      await until(`Boolean(document.querySelector('#email'))`);await fill('#email','admin-live@example.test');await fill('#password',credentials.password);await click('form button[type=submit]');await until(`Boolean(document.querySelector('nav'))`);
+      const stats=`Object.fromEntries([...document.querySelectorAll('.stat-label')].map(e=>[e.textContent.trim(),e.parentElement.querySelector('.stat-value')?.textContent.trim()]))`;
+      await until(`(${stats})['会话数']==='1'&&(${stats})['已插入']==='1'`);const actual=await evaluate(stats);
+      const expected={'注册用户':'2','会话数':'1','结果会话':'1','整理字数':'14','已插入':'1','插入成功率':'100.0%','学习事件':'0','接收总时长':'1 秒','成功口述时长':'1 秒'};
+      check(Object.entries(expected).every(([key,value])=>actual[key]===value),'Admin history totals differ from frozen synthetic session/native insertion oracle');
+      await button('退出登录');await until(`Boolean(document.querySelector('#email'))&&!document.querySelector('nav')`);return{metrics:actual,expected,storage:await privacy()};
+    });
   }else{
     await cdp('Network.enable'); // Status only; never request bodies, headers or response tokens.
     async function login(who){await fill('#email',who);await fill('#password',credentials.password);await click('form button[type=submit]');}
@@ -114,7 +198,8 @@ async function privacy(){
     await caseRun('LIVE-ADMIN-02',async()=>{await login('admin-live@example.test');await until(`Boolean(document.querySelector('nav'))`);const stats=`Object.fromEntries([...document.querySelectorAll('.stat-label')].map(e=>[e.textContent.trim(),e.parentElement.querySelector('.stat-value')?.textContent.trim()]))`;await until(`(${stats})['会话数']==='0'&&(${stats})['注册用户']==='2'`);const actual=await evaluate(stats);check(actual['已插入']==='0','Admin invented an insertion');return{metrics:actual,oracle:'one seeded admin + one real desktop registration, zero audio sessions'};});
     await caseRun('LIVE-ADMIN-03',async()=>{await button('退出登录');await until(`Boolean(document.querySelector('#email'))&&!document.querySelector('nav')`);return{logged_out:true,storage:await privacy()};});
   }
-})().catch(error=>{report.infrastructure_error=error.message.replaceAll(credentials.password,'[redacted]');process.exitCode=1;}).finally(()=>{
+})().catch(error=>{report.infrastructure_error=error.message.replaceAll(credentials.password,'[redacted]');process.exitCode=1;}).finally(async()=>{
+  if(native){native.stdin.end();const exited=await Promise.race([nativeExit,pause(2500).then(()=>null)]);if(!exited){native.kill();report.observer_cleanup=await nativeExit;process.exitCode=1;}else report.observer_cleanup=exited;}
   socket?.terminate();
   for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('Owned session closed'));}
   fs.writeFileSync(output,JSON.stringify(report,null,2),{flag:'wx'});

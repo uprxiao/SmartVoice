@@ -1,11 +1,13 @@
-param([Parameter(Mandatory=$true)][string]$PythonExe,[Parameter(Mandatory=$true)][string]$EvidenceDir,[switch]$Worker)
+param([Parameter(Mandatory=$true)][string]$PythonExe,[Parameter(Mandatory=$true)][string]$EvidenceDir,[switch]$Worker,[switch]$HistoryInsert)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'probe-files.ps1')
 if($env:GITHUB_ACTIONS -ne 'true'){throw 'Owned disposable runner required'}
 $verify=Join-Path $env:CARGO_TARGET_DIR 'release/verify.exe'
 if(-not $Worker){
-    & $verify --medium (Get-Command pwsh).Source -NoProfile -File $PSCommandPath -Worker -PythonExe $PythonExe -EvidenceDir $EvidenceDir
+    $workerArgs=@('-NoProfile','-File',$PSCommandPath,'-Worker','-PythonExe',$PythonExe,'-EvidenceDir',$EvidenceDir)
+    if($HistoryInsert){$workerArgs+='-HistoryInsert'}
+    & $verify --medium (Get-Command pwsh).Source @workerArgs
     if($LASTEXITCODE -ne 0){throw 'Actual Main/HTTP/PostgreSQL UI integration failed'}
     exit 0
 }
@@ -16,7 +18,7 @@ $ui=Join-Path $PSScriptRoot 'product-live-ui.cjs'
 $electron=Join-Path $repo 'desktop/node_modules/electron/dist/electron.exe'
 $profileDir=Join-Path $EvidenceDir 'desktop-profile'
 $environment=Join-Path $EvidenceDir 'environment.json'
-$server=$null;$desktop=$null;$second=$null;$browser=$null;$serverOut=$null;$serverErr=$null
+$server=$null;$desktop=$null;$second=$null;$browser=$null;$historyNotepad=$null;$serverOut=$null;$serverErr=$null
 $data=[ordered]@{source_sha=$env:GITHUB_SHA;status='not_run';scope='real Windows Main/preload + real isolated HTTP/PostgreSQL/Admin; mock providers, no hardware/audio/model/S5 pass';desktop_stops=@();profile_lifecycle=@()}
 if(-not ('SviLiveWindows' -as [type])){Add-Type @'
 using System;
@@ -129,10 +131,10 @@ function Crypto-Control {
 try {
     Assert-Live (-not (Test-Path $EvidenceDir)) 'New integration directory required'
     $sources=@{}
-    foreach($file in @('server/tests/desktop_live_environment.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs')){
+    foreach($file in @('server/tests/desktop_live_environment.py','server/tests/desktop_history_fixture.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/src/main/core/auth-service.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','desktop/src/renderer/views/HistoryView.tsx','desktop/src/renderer/stores/session-store.ts','server/app/models/session.py','server/app/services/session_runtime.py','server/app/providers/asr/mock.py','server/app/providers/llm/mock.py','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs')){
         $sources[$file]=(Get-FileHash (Join-Path $repo $file) -Algorithm SHA256).Hash
     }
-    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=10;case_groups=@{register=5;resume=2;admin=3};oracle='one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
+    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$(if($HistoryInsert){15}else{10});case_groups=@{register=5;resume=2;admin=3;history=$(if($HistoryInsert){5}else{0})};oracle='baseline: one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';history_oracle=$(if($HistoryInsert){'after complete baseline: real HTTP/WS zero PCM/mock result with explicitly prepared review flag; actual UI refine retry, manual OS target capture/insert, duplicate click, logout; 1 session/2 results/1 inserted observable receipt/14 chars/0 learning; real Admin same database'}else{'not planned'});audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
     Assert-Live (Test-Path $env:PGBIN) 'Preinstalled frozen PostgreSQL tools unavailable'
     & $PythonExe $fixture prepare --run-dir $EvidenceDir --pg-bin $env:PGBIN --port 17863
     Assert-Live ($LASTEXITCODE -eq 0) 'Isolated fixture setup failed; private setup evidence retained'
@@ -229,11 +231,45 @@ try {
     $final=Snapshot 'database-final.json'
     Assert-Live ($final.users.Count -eq 2 -and $final.active_logins -eq $expectedFinalActive -and $final.sessions -eq 0 -and @($final.users|Where-Object{-not $_.learning_enabled}).Count -eq 0) 'Final real database differs from the independent oracle'
     if($null -ne $resumeFailure){throw "$resumeFailure; independent Admin UI completed, saved-account gate remains failed"}
+    if($HistoryInsert){
+        $historyFixture=Join-Path $repo 'server/tests/desktop_history_fixture.py'
+        $seedText=& $PythonExe $historyFixture seed --environment $environment
+        Assert-Live ($LASTEXITCODE -eq 0) 'Explicit synthetic history preparation failed'
+        $seed=$seedText|ConvertFrom-Json
+        Assert-Live ($seed.review_flag_prepared_by_fixture -and $seed.baseline.results.Count -eq 1 -and $seed.baseline.insertions.Count -eq 0) 'History preparation oracle differs'
+        $targetFile=Join-Path $EvidenceDir 'history-notepad.txt'
+        [IO.File]::WriteAllText($targetFile,'BEGIN React END',[Text.UTF8Encoding]::new($false))
+        $notepadExe=Join-Path $env:WINDIR 'System32/notepad.exe'
+        $noteInfo=[Diagnostics.ProcessStartInfo]::new($notepadExe);$noteInfo.UseShellExecute=$false;$noteInfo.ArgumentList.Add($targetFile)
+        $historyNotepad=[Diagnostics.Process]::Start($noteInfo)
+        $end=[DateTime]::UtcNow.AddSeconds(20)
+        do{$historyNotepad.Refresh();if($historyNotepad.HasExited){throw 'Owned history Notepad exited'};if($historyNotepad.MainWindowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}while([DateTime]::UtcNow -lt $end)
+        $noteFacts=Get-CimInstance Win32_Process -Filter "ProcessId = $($historyNotepad.Id)"
+        Assert-Live ($historyNotepad.MainWindowHandle -ne [IntPtr]::Zero -and [IO.Path]::GetFullPath($noteFacts.ExecutablePath) -eq [IO.Path]::GetFullPath($notepadExe)) 'Owned history Notepad identity/window unavailable'
+        $launch=Start-Desktop;$desktop=$launch.process
+        Write-NewJson @{schema='svi-history-targets-v1';main_pid=$desktop.Id;notepad_pid=$historyNotepad.Id;notepad_image_verified=$true;controller_owns_process_objects=$true} (Join-Path $EvidenceDir 'history-targets.json')
+        & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-history.json') 'history'
+        $historyExit=$LASTEXITCODE
+        $historyText=& $PythonExe $historyFixture snapshot --environment $environment
+        Assert-Live ($LASTEXITCODE -eq 0) 'Independent history database readback failed'
+        $history=$historyText|ConvertFrom-Json
+        Write-NewJson $history (Join-Path $EvidenceDir 'database-history.json')
+        Assert-Live ($historyExit -eq 0) 'Actual history retry/manual insert/repeat/logout UI cases failed'
+        Assert-Live ($history.results.Count -eq 2 -and $history.results[0].review_required -and -not $history.results[1].review_required -and $history.results[1].attempt_no -eq 2 -and $history.results[1].attempt_kind -eq 'refine' -and @($history.results|Where-Object{$_.state -ne 'ready' -or $_.learning_enabled -or $_.received_samples -ne 16000}).Count -eq 0) 'Actual history retry result/session metadata differs'
+        Assert-Live ($history.insertions.Count -eq 1 -and $history.insertions[0].result_id -eq $history.results[1].result_id -and $history.insertions[0].status -eq 'inserted' -and $history.insertions[0].observable -and $null -eq $history.insertions[0].error_code -and $history.learning_events -eq 0 -and @($history.users|Where-Object{-not $_.learning_enabled}).Count -eq 0) 'Native insertion receipt/deduplication/learning database oracle differs'
+        Stop-Desktop $desktop;$desktop=$null
+        & node $ui $port $environment (Join-Path $EvidenceDir 'admin-history.json') 'admin-history'
+        Assert-Live ($LASTEXITCODE -eq 0) 'Actual Admin same-history-database UI case failed'
+        $historyFinal=Snapshot 'database-after-history-logout.json'
+        Assert-Live ($historyFinal.users.Count -eq 2 -and $historyFinal.sessions -eq 1 -and $historyFinal.active_logins -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'History client/Admin logout left credentials or unexpected sessions'
+        $data.history_insertion=@{status='pass';synthetic_audio=$true;real_dom_input=$true;formal_product_native_helper=$true;physical_microphone_verified=$false;independent_database=$history}
+    }
     $data.status='pass'
 } catch {$data.status='fail';$data.error=$_.Exception.Message;throw}
 finally {
     if($null -ne $second -and -not $second.process.HasExited){try{Stop-Desktop $second.process}catch{$data.second_cleanup_error=$_.Exception.Message;$data.status='fail'}}
     if($null -ne $desktop){try{Stop-Desktop $desktop}catch{$data.desktop_cleanup_error=$_.Exception.Message;$data.status='fail'}}
+    if($null -ne $historyNotepad){if(-not $historyNotepad.HasExited){$historyNotepad.Kill($true)};$data.notepad_exit_confirmed=$historyNotepad.WaitForExit(5000);if(-not $data.notepad_exit_confirmed){$data.status='fail'}}
     if($null -ne $browser){if(-not $browser.HasExited){$browser.Kill($true)};$data.browser_exit_confirmed=$browser.WaitForExit(5000);if(-not $data.browser_exit_confirmed){$data.status='fail'}}
     if($null -ne $server){
         if(-not $server.HasExited){$server.Kill($true)};$data.server_exit_confirmed=$server.WaitForExit(5000)

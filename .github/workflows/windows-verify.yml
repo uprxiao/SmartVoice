@@ -180,7 +180,7 @@ jobs:
         id: live-ui
         if: ${{ !cancelled() && steps.live-runtime.outcome == 'success' }}
         shell: pwsh
-        run: ./desktop/native/windows/scripts/product-live-service.ps1 -PythonExe $env:SVI_LIVE_PYTHON -EvidenceDir "$env:SVI_PROBE_EVIDENCE/live-desktop"
+        run: ./desktop/native/windows/scripts/product-live-service.ps1 -PythonExe $env:SVI_LIVE_PYTHON -EvidenceDir "$env:SVI_PROBE_EVIDENCE/live-desktop" -HistoryInsert
       - name: Preserve the development installer
         if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' && steps.product-install.outcome == 'success' && steps.live-ui.outcome == 'success' }}
         uses: actions/upload-artifact@v4
@@ -219,6 +219,10 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-ui.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-targets.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-history.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-history.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/database-*.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/login-cleanup.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/postgres-cleanup-*.json
