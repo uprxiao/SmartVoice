@@ -97,14 +97,15 @@ function Profile-Facts([string]$Label){
 }
 function Crypto-Control {
     $records=@()
-    foreach($variant in @(@{kind='hard';api='sync'},@{kind='graceful';api='sync'},@{kind='hard';api='async'})){
+    foreach($variant in @(@{kind='hard';api='sync'},@{kind='graceful';api='sync'},@{kind='hard';api='async'},@{kind='hard';api='sync-flush'},@{kind='hard';api='sync-prewarmed'})){
         $kind=$variant.kind;$apiMode=$variant.api
         $directory=Join-Path $EvidenceDir "crypto-$apiMode-$kind"
         Assert-Live (-not (Test-Path $directory)) 'Fresh crypto control required'
         [IO.Directory]::CreateDirectory($directory)|Out-Null
         Write-NewJson @{schema='svi-safe-storage-control-v1';exit_kind=$kind;api_mode=$apiMode} (Join-Path $directory 'owner.json')
         $row=@{exit_kind=$kind;api_mode=$apiMode;scope='standalone real safeStorage control, not product or UI pass'}
-        foreach($phase in @('encrypt','decrypt')){
+        $phases=if($apiMode -eq 'sync-prewarmed'){@('warmup','encrypt','decrypt')}else{@('encrypt','decrypt')}
+        foreach($phase in $phases){
             $process=$null
             try{
                 $info=[Diagnostics.ProcessStartInfo]::new($electron);$info.UseShellExecute=$false;$info.CreateNoWindow=$true
@@ -126,7 +127,7 @@ function Crypto-Control {
         }
         $records+=@($row)
     }
-    Write-NewJson @{scope='three independently owned actual Electron encryption controls; no token/key/cipher contents';observations=$records} (Join-Path $EvidenceDir 'crypto-control.json')
+    Write-NewJson @{scope='five independently owned actual Electron encryption controls; no token/key/cipher contents';observations=$records} (Join-Path $EvidenceDir 'crypto-control.json')
 }
 try {
     Assert-Live (-not (Test-Path $EvidenceDir)) 'New integration directory required'
@@ -230,8 +231,12 @@ try {
     Assert-Live ($LASTEXITCODE -eq 0) 'Admin same-database real UI cases failed'
     $final=Snapshot 'database-final.json'
     Assert-Live ($final.users.Count -eq 2 -and $final.active_logins -eq $expectedFinalActive -and $final.sessions -eq 0 -and @($final.users|Where-Object{-not $_.learning_enabled}).Count -eq 0) 'Final real database differs from the independent oracle'
-    if($null -ne $resumeFailure){throw "$resumeFailure; independent Admin UI completed, saved-account gate remains failed"}
     if($HistoryInsert){
+        # Saved-account recovery is separately recorded as failed/blocked. A new
+        # explicit login can still test history insertion; preparation revocation
+        # is not counted as that missing product logout or a recovery pass.
+        & $PythonExe $fixture revoke --environment $environment --cleanup-phase history-preparation
+        Assert-Live ($LASTEXITCODE -eq 0) 'Independent history preparation cleanup failed'
         $historyFixture=Join-Path $repo 'server/tests/desktop_history_fixture.py'
         $seedText=& $PythonExe $historyFixture seed --environment $environment
         Assert-Live ($LASTEXITCODE -eq 0) 'Explicit synthetic history preparation failed'
@@ -264,6 +269,7 @@ try {
         Assert-Live ($historyFinal.users.Count -eq 2 -and $historyFinal.sessions -eq 1 -and $historyFinal.active_logins -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'History client/Admin logout left credentials or unexpected sessions'
         $data.history_insertion=@{status='pass';synthetic_audio=$true;real_dom_input=$true;formal_product_native_helper=$true;physical_microphone_verified=$false;independent_database=$history}
     }
+    if($null -ne $resumeFailure){throw "$resumeFailure; independent Admin and available history UI completed, saved-account gate remains failed"}
     $data.status='pass'
 } catch {$data.status='fail';$data.error=$_.Exception.Message;throw}
 finally {

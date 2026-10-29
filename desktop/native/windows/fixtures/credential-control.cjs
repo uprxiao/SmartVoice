@@ -1,9 +1,9 @@
 // Standalone real Electron safeStorage control, never loaded by the product.
-const {app,safeStorage}=require('electron');
+const {app,safeStorage,session}=require('electron');
 const fs=require('node:fs'),path=require('node:path');
 const option=name=>{const index=process.argv.indexOf(name);return index>=0?process.argv[index+1]:undefined;};
 const owned=option('--control-dir'),phase=option('--control-phase'),exitKind=option('--control-exit'),apiMode=option('--control-api');
-if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!['encrypt','decrypt'].includes(phase)||!['hard','graceful'].includes(exitKind)||!['sync','async'].includes(apiMode))throw Error('Disposable Windows crypto control required');
+if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!['warmup','encrypt','decrypt'].includes(phase)||!['hard','graceful'].includes(exitKind)||!['sync','async','sync-flush','sync-prewarmed'].includes(apiMode)||phase==='warmup'&&apiMode!=='sync-prewarmed')throw Error('Disposable Windows crypto control required');
 const directory=path.resolve(owned||'');
 const relative=path.relative(path.resolve(process.env.RUNNER_TEMP),directory);
 const owner=JSON.parse(fs.readFileSync(path.join(directory,'owner.json'),'utf8'));
@@ -26,8 +26,13 @@ app.whenReady().then(async()=>{
   try{
     report.available=apiMode==='async'?await safeStorage.isAsyncEncryptionAvailable():safeStorage.isEncryptionAvailable();
     if(!report.available)report.status='unavailable';
-    else if(phase==='encrypt'){
+    else if(phase==='warmup'){
+      // A separate normal exit commits Electron's own configuration. No private
+      // key/pref format is written or copied, and no account is involved.
+      const discarded=safeStorage.encryptString(canary);report.encrypted_bytes=discarded.length;report.status='initialized';
+    }else if(phase==='encrypt'){
       const cipher=apiMode==='async'?await safeStorage.encryptStringAsync(canary):safeStorage.encryptString(canary);fs.writeFileSync(path.join(directory,'cipher.private.bin'),cipher,{flag:'wx'});
+      if(apiMode==='sync-flush'){session.defaultSession.flushStorageData();await new Promise(setImmediate);report.public_dom_storage_flush_called=true;}
       report.encrypted_bytes=cipher.length;report.status='encrypted';
     }else{
       const cipher=fs.readFileSync(path.join(directory,'cipher.private.bin'));

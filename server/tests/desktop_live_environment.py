@@ -202,7 +202,7 @@ async def snapshot(path):
         await conn.close()
 
 
-async def revoke(path):
+async def revoke(path, phase="final"):
     import asyncpg
     value = environment(path)
     conn = await asyncpg.connect(value["database_url"].replace("postgresql+asyncpg:", "postgresql:"))
@@ -210,7 +210,9 @@ async def revoke(path):
         before = await conn.fetchval("SELECT count(*) FROM login_sessions WHERE revoked_at IS NULL")
         await conn.execute("UPDATE login_sessions SET revoked_at=now() WHERE revoked_at IS NULL")
         after = await conn.fetchval("SELECT count(*) FROM login_sessions WHERE revoked_at IS NULL")
-        write_new(Path(value["run_dir"]) / "login-cleanup.json", {"revoked": before, "active_after_cleanup": after})
+        filename = "history-preparation-cleanup.json" if phase == "history-preparation" else "login-cleanup.json"
+        write_new(Path(value["run_dir"]) / filename, {"revoked": before, "active_after_cleanup": after,
+                  "phase": phase, "scope": "owned fixture cleanup, not a product logout result"})
         if after != 0:
             raise RuntimeError("Fixture logins remain active")
     finally:
@@ -237,6 +239,7 @@ if __name__ == "__main__":
     parser.add_argument("--pg-bin", type=Path)
     parser.add_argument("--port", type=int, default=17863)
     parser.add_argument("--environment", type=Path)
+    parser.add_argument("--cleanup-phase", choices=("final", "history-preparation"), default="final")
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.run_dir, args.pg_bin, args.port)
@@ -245,6 +248,6 @@ if __name__ == "__main__":
     elif args.command == "snapshot":
         print(json.dumps(asyncio.run(snapshot(args.environment)), ensure_ascii=False))
     elif args.command == "revoke":
-        asyncio.run(revoke(args.environment))
+        asyncio.run(revoke(args.environment, args.cleanup_phase))
     else:
         stop_pg(args.environment)
