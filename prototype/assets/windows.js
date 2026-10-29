@@ -69,8 +69,8 @@ function hud() {
 }
 function tray() {
   if (!win()) return `<h1>macOS 行为对照</h1><p class="lede">关闭主窗口后继续运行，可通过 Dock 或应用菜单重新打开。本版不增加 macOS 开机自启。</p>`;
-  const hidden=['first-close','hidden','autostart'].includes(route.scene), exited=route.scene==='exited';
-  return `<h1>后台运行</h1><div class="tray-stage">${!hidden&&!exited?`<div class="plain-card"><div><b>SmartVoiceInput</b><p>主窗口已打开</p>${button('关闭主窗口','close-main')}</div></div>`:exited?'<p class="platform-note">SmartVoiceInput 已退出。</p>':'<p class="platform-note">主窗口已隐藏，应用继续在托盘运行。</p>'}${!exited?`<div class="tray-taskbar"><button data-action="tray-menu" aria-label="SmartVoiceInput 托盘菜单">◉ SmartVoiceInput</button></div>${state.menu?`<div class="tray-menu" role="menu"><button role="menuitem" data-action="open-main">打开</button><button role="menuitem" data-action="exit">退出</button></div>`:''}`:''}</div>${route.scene==='first-close'?`<div class="notice" role="status">SmartVoiceInput 仍在后台运行，可从托盘图标打开或退出。</div>`:''}<div class="actions">${button('再次启动应用','second-launch',exited)}${button('打开主窗口','open-main',exited)}${button('退出','exit',exited)}</div><p class="platform-note">${route.scene==='autostart'?'开机自启直接进入托盘，不弹出主窗口。':'首次关闭提示在本次演示中只显示一次；重复启动复用同一实例并调出主窗口。'}</p>`;
+  const hidden=['hidden','autostart'].includes(route.scene), exited=route.scene==='exited';
+  return `<h1>后台运行</h1><div class="tray-stage">${!hidden&&!exited?`<div class="plain-card"><div><b>SmartVoiceInput</b><p>主窗口已打开</p>${button('关闭主窗口','close-main')}</div></div>`:exited?'<p class="platform-note">SmartVoiceInput 已退出。</p>':'<p class="platform-note">主窗口已隐藏，应用继续在托盘运行。</p>'}${!exited?`<div class="tray-taskbar"><button data-action="tray-menu" aria-label="SmartVoiceInput 托盘菜单">◉ SmartVoiceInput</button></div>${state.menu?`<div class="tray-menu" role="menu"><button role="menuitem" data-action="open-main">打开</button><button role="menuitem" data-action="exit">退出</button></div>`:''}`:''}</div>${route.scene==='first-close'?`<div class="notice" role="dialog" aria-label="关闭后继续运行"><p>SmartVoiceInput 仍在后台运行，可从托盘图标打开或退出。</p>${button('知道了','ack-close')}</div>`:''}<div class="actions">${button('再次启动应用','second-launch',exited)}${button('打开主窗口','open-main',exited)}${button('退出','exit',exited)}</div><p class="platform-note">${route.scene==='autostart'?'开机自启直接进入托盘，不弹出主窗口。':'首次关闭提示在本次演示中只显示一次；重复启动复用同一实例并调出主窗口。'}</p>`;
 }
 function render() {
   const [page,query='']=location.hash.slice(1).split('?'), params=new URLSearchParams(query);
@@ -90,7 +90,8 @@ document.addEventListener('click',event=>{
   const target=event.target.closest('button'); if (!target||target.disabled) return;
   if (target.dataset.tab) {state.tab=target.dataset.tab;render();return;}
   const action=target.dataset.action;
-  if (action==='close-main') {const first=!state.closedOnce;state.closedOnce=true;state.menu=false;go('tray',first?'first-close':'hidden');}
+  if (action==='close-main') {state.menu=false;go('tray',state.closedOnce?'hidden':'first-close');}
+  else if (action==='ack-close') {state.closedOnce=true;go('tray','hidden');}
   else if (['open-main','second-launch'].includes(action)) {state.menu=false;go('tray');toast('已调出主窗口（模拟，仍为同一实例）');}
   else if (action==='tray-menu') {state.menu=!state.menu;render();}
   else if (action==='exit') {state.menu=false;go('tray','exited');}

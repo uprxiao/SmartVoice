@@ -8,6 +8,8 @@
 
 # 桌面与原生输入契约（v0.2）
 
+2026-10-29 Windows v0.0.2 的平台设计见 [windows-v002-design.md](windows-v002-design.md)。下文 Native 字段已按共享桥/Swift 的实际扁平格式校正，Windows 不新增修改观察；v0.0.3 事件通道仍为后续草稿。
+
 依据：方案 B、[业务规则](../02-prd/business-rules.md)、[API](api-contract.md)、[会话协议](session-protocol.md)。复用来源见 [reuse-map](reuse-map.md)。本文件是待实现契约，不代表现有 SmartDD 代码已经具备所有能力。
 
 ## 1. 进程与通信
@@ -56,17 +58,18 @@ HUD 单独非激活窗口，不能改变当前目标焦点。录音所在 Render
 
 macOS 使用 Accessibility/CGEvent；Windows 使用 UI Automation/SendInput。2026-10-28 快速纠正学习（S2 待评审）：macOS helper 新增事件驱动观察（`observeStart/observeStop`）与第 4 管道（fd 3）主动事件，stdin/stdout 数字 id 协议不变，详见 [fast-correction-learning-design-20261028.md](fast-correction-learning-design-20261028.md)。平台实现放 desktop/native，通过 JSONL stdin/stdout 与 Main 连接。stderr 不输出目标文本；stdout 只能是协议响应。不要向日志写 stdin/stdout 原消息。
 
-请求公共字段：`id`（本进程递增）、`action`、`data`；响应：`id`、`ok`、`data` 或 `error:{code,message,effect}`。effect=`none|written|unknown`；错误文案不包含目标正文。单行最大 1 MiB，参数超限直接降级复制。Main 超时 5000 ms 杀掉 helper 并拒绝待处理请求；曾开始写入的请求视为 unknown，不自动重放。
+请求公共字段：`id`（本进程递增）、`action`，动作参数直接在同一对象内（`{...data,id,action}`），没有 `data` 包裹层。响应同样为 `id` 加动作字段，或 `error:{code,message,effect}`，没有 `ok/data` 包裹层。effect=`none|written|unknown`；错误文案不包含目标正文。单行最大 1 MiB，参数超限在副作用前拒绝。Main 超时 5000 ms 杀掉 helper 并拒绝待处理请求；已派发的写入请求视为 unknown，不自动重放。
 
 | action | 必需数据 | 返回/不变量 |
 |---|---|---|
-| permissions | 无 | microphone/accessibility/read/write/observe 支持状态 |
-| capture | 无 | snapshot_id、app/window/control 标识、是否可读/可写/密码框、选区；原值仅留 helper/Main 内存 |
-| validate | snapshot_id | 默认复核同一应用/窗口/控件、焦点、选区、原值；通用不可读目标核对进程/窗口/已知安全边界，不伪造正文匹配 |
-| insert | snapshot_id、insertion_id、text | 写前再次复核；读回 expected_value；返回 inserted/failed/unverified、effect、observable |
-| observe.start | snapshot_id、insertion_id | 仅 inserted+observable=true；记录本次替换后的片段边界 |
-| observe.poll | insertion_id | unchanged/change/ended；只返回本次片段差异，不返回输入框原有全文 |
-| observe.stop/dispose | insertion_id 或全部 | 清除片段、原值与句柄；幂等 |
+| permission | 可选 prompt | supported/trusted；Windows 增加 observationSupported=false，不代表 macOS AX 授权 |
+| capture | 无 | target、app、observable；原值/选区/控件引用留 helper，不跨 Renderer IPC |
+| validate | target、可选 restoreFocus | valid、code/message；显式目标复核同一应用/窗口/控件、焦点、选区和原值；不可读目标不伪造匹配 |
+| insert | target、insertion_id、text、可选 restoreFocus | 显式目标再次校验，一次写入；返回 status/effect/observable/code/message |
+| insertCurrent | insertion_id、text | 正常自动路径，同次请求取得最终当前目标，返回写入结果及可用 target/app |
+| inputBounds | 无 | available、bounds；Windows 标记 physical，由 Main 转 DIP |
+| observe | target | Mac 既有有限观察，返回 valid/text（仅本次片段）/composition/compositionEvidence；Windows 本版不实现。v0.0.3 observeStart/Stop 另见学习设计草稿 |
+| release | target | 清除片段、原值与句柄，幂等；不是新增学习能力。dispose 为 Main 原生桥本地关闭方法，不是协议动作 |
 
 应用/窗口/控件标识不得只靠进程名；包含进程生命周期和控件有效性检查。快照仅当前进程有效，不跨重启恢复。原生 API 的 UTF-16/平台坐标由 helper 转换为统一 Unicode 码点；保留在本地的原始快照与定位不能上传给服务端。
 

@@ -32,6 +32,7 @@ htmlcov/
 
 # JavaScript 依赖、构建与测试产物
 node_modules/
+.pnpm-store/
 dist/
 out/
 coverage/
