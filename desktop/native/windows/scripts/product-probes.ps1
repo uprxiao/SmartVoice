@@ -1,6 +1,11 @@
 # S4 production helper checks within the existing disposable Medium worker/fixture.
 # Dot-sourced by run-probes; no production mock switch or fixture action is exposed by the helper.
-$script:ProductResults = [System.Collections.Generic.List[object]]::new()
+$script:ProductResults = [ordered]@{}
+$plannedIds = @('TC-WIN-10-product','TC-WIN-05-product','TC-WIN-03-product','TC-WIN-09-product','TC-WIN-15-product')
+foreach ($f in @('plain','editor')) { foreach ($p in @('selection','caret','empty')) { $plannedIds += "TC-WIN-01-product-electron-$f-$p" } }
+foreach ($k in @('notepad','input','textarea')) { $plannedIds += "TC-WIN-01-product-$k" }
+foreach ($k in @('password','readonly','unreadable')) { $plannedIds += "TC-WIN-06-07-product-$k" }
+foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false
 $productInfo.CreateNoWindow = $true
@@ -34,11 +39,11 @@ function Product-Case([string]$Id, [scriptblock]$Body) {
     $started = [DateTime]::UtcNow
     try {
         $observations = & $Body
-        $script:ProductResults.Add(@{id=$Id;status='pass';observations=$observations;started_at=$started.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')})
+        $script:ProductResults[$Id] = @{id=$Id;status='pass';observations=$observations;started_at=$started.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}
     } catch {
-        $script:ProductResults.Add(@{id=$Id;status='fail';error=$_.Exception.Message;started_at=$started.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')})
+        $script:ProductResults[$Id] = @{id=$Id;status='fail';error=$_.Exception.Message;started_at=$started.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}
     }
-    Write-Host "$Id $($script:ProductResults[-1].status) $($script:ProductResults[-1]['error'])"
+    Write-Host "$Id $($script:ProductResults[$Id].status) $($script:ProductResults[$Id]['error'])"
 }
 try {
     Product-Case 'TC-WIN-10-product' {
@@ -50,19 +55,21 @@ try {
         Assert-Probe ($invalid.error.effect -eq 'none') 'Missing insertion ID was not rejected'
         return @{permission=$permission;probe_rejected=$probe;invalid_rejected=$invalid}
     }
-    Product-Case 'TC-WIN-01-product-electron' {
-        $groups = @()
-        foreach ($fieldName in @('plain','editor')) {
-            foreach ($position in @('selection','caret','empty')) {
+    foreach ($fieldName in @('plain','editor')) {
+        foreach ($position in @('selection','caret','empty')) {
+            Product-Case "TC-WIN-01-product-electron-$fieldName-$position" {
                 $initial = if ($position -eq 'empty') { '' } else { 'BEGIN React END' }
                 $start = if ($position -eq 'empty') { 0 } else { 6 }
                 $length = if ($position -eq 'selection') { 5 } else { 0 }
                 $field = Fixture 'field' @{field=$fieldName;initial=$initial;start=$start;end=($start+$length)}
                 Focus-Target $field.pid
                 $null = Native 'probeSeedClipboard'
+                $beforeRaw = Native 'probeReadNow' @{fixture_pid=$field.pid}
                 $text = '中文🙂'
                 $result = Product 'insertCurrent' @{insertion_id="electron-$fieldName-$position";text=$text}
                 $after = Fixture 'fieldState'
+                $afterRaw = Native 'probeReadNow' @{fixture_pid=$field.pid}
+                Write-NewJson @{field=$fieldName;position=$position;before=$beforeRaw;after=$afterRaw;result=$result;independent=$after} (Join-Path $OutputDir "product-raw-$fieldName-$position.json")
                 $expected = $initial.Substring(0,$start) + $text + $initial.Substring($start+$length)
                 Assert-Probe ($result.status -eq 'inserted' -and $result.effect -eq 'written' -and $result.observable) 'Production Electron result unverified'
                 Assert-Probe ($after.value -ceq $expected -and $after.start -eq ($start+$text.Length) -and $after.end -eq $after.start) 'Independent DOM text/caret mismatch'
@@ -70,14 +77,12 @@ try {
                 $clip = Native 'probeClipboardState'
                 Assert-Probe ($clip.text -ceq 'SVI original clipboard') 'Product did not restore original clipboard'
                 $null = Product 'release' @{target=$result.target}
-                $groups += @{field=$fieldName;position=$position;result=$result;independent=$after;clipboard=$clip}
+                return @{field=$fieldName;position=$position;result=$result;independent=$after;clipboard=$clip}
             }
         }
-        return @{groups=$groups}
     }
-    Product-Case 'TC-WIN-01-product-notepad-chrome' {
-        $groups = @()
-        foreach ($kind in @('notepad','input','textarea')) {
+    foreach ($kind in @('notepad','input','textarea')) {
+        Product-Case "TC-WIN-01-product-$kind" {
             if ($kind -eq 'notepad') {
                 $file = Join-Path $OutputDir 'product-notepad.txt'
                 [System.IO.File]::WriteAllText($file, 'BEGIN React END', $Utf8)
@@ -94,9 +99,8 @@ try {
             $result = Product 'insertCurrent' @{insertion_id="actual-$kind";text='中文🙂'}
             $after = Capture-Target $target.Id
             Assert-Probe ($result.status -eq 'inserted' -and $result.observable -and $after.readback.text -ceq 'BEGIN 中文🙂 END' -and $after.readback.caret_utf16 -eq 10 -and $after.readback.selection_utf16_len -eq 0) 'Product real target did not exactly match independent expectation'
-            $groups += @{kind=$kind;result=$result;independent=$after}
+            return @{kind=$kind;result=$result;independent=$after}
         }
-        return @{groups=$groups}
     }
     Product-Case 'TC-WIN-05-product' {
         Focus-Target $HighTargetId
@@ -108,9 +112,8 @@ try {
         Assert-Probe ($before.sequence -eq $after.sequence -and $before.text -ceq $after.text) 'Product high-IL changed clipboard'
         return @{result=$result;before=$before;after=$after}
     }
-    Product-Case 'TC-WIN-06-07-product' {
-        $groups = @()
-        foreach ($name in @('password','readonly','unreadable')) {
+    foreach ($name in @('password','readonly','unreadable')) {
+        Product-Case "TC-WIN-06-07-product-$name" {
             $field = Fixture 'field' @{field=$name}
             Focus-Target $field.pid
             $null = Native 'probeSeedClipboard'
@@ -121,9 +124,8 @@ try {
             } else {
                 Assert-Probe ($result.status -eq 'failed' -and $result.effect -eq 'none' -and $after.value -ceq 'fixture-only') 'Product changed protected field'
             }
-            $groups += @{field=$name;result=$result;independent=$after}
+            return @{field=$name;result=$result;independent=$after}
         }
-        return @{groups=$groups}
     }
     Product-Case 'TC-WIN-03-product' {
         $field = Fixture 'field' @{field='plain'}
@@ -165,5 +167,5 @@ try {
     $script:Product.StandardInput.Close()
     if (-not $script:Product.WaitForExit(3000)) { $script:Product.Kill($true); $script:Product.WaitForExit(3000) | Out-Null }
     if ($productStderr.Wait(1000)) { [System.IO.File]::WriteAllText((Join-Path $OutputDir 'product-stderr.txt'), $productStderr.Result, $Utf8) }
-    Write-NewJson @{planned=8;cases=@($script:ProductResults);scope='production helper against independent fixtures; not packaged product/audio/S5'} (Join-Path $OutputDir 'product-cases.json')
+    Write-NewJson @{planned=$plannedIds.Count;cases=@($script:ProductResults.Values);scope='production helper against independent fixtures; not packaged product/audio/S5'} (Join-Path $OutputDir 'product-cases.json')
 }

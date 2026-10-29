@@ -23,6 +23,47 @@ pub fn dispatch(uia: &Uia, request: &Value) -> R<Value> {
             "executable":std::env::current_exe().map_err(|e| e.to_string())?}),
         ),
         "foreground" => Ok(json!({"admission":foreground::admit_foreground()})),
+        "probeReadNow" => {
+            let pid = fixture_pid(request)?;
+            let el = uia.focused()?;
+            let info = uia.describe(&el);
+            if info.pid != pid as i32 || foreground::foreground().is_none_or(|f| f.pid != pid) {
+                return Err("not the fixture".into());
+            }
+            if info.is_password {
+                return Err("protected fixture".into());
+            }
+            use windows::Win32::UI::Accessibility::{
+                IUIAutomationTextPattern, IUIAutomationTextPattern2, UIA_TextPattern2Id,
+                UIA_TextPatternId,
+            };
+            let pattern =
+                unsafe { el.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId) };
+            let selection = pattern.as_ref().ok().map(|tp| unsafe {
+                tp.GetSelection()
+                    .and_then(|s| s.Length())
+                    .map_err(|e| e.to_string())
+            });
+            let document = pattern.as_ref().ok().map(|tp| unsafe {
+                tp.DocumentRange()
+                    .and_then(|d| d.GetText(200001))
+                    .map(|s| s.to_string())
+                    .map_err(|e| e.to_string())
+            });
+            let pattern2 =
+                unsafe { el.GetCurrentPatternAs::<IUIAutomationTextPattern2>(UIA_TextPattern2Id) };
+            let mut active = windows::core::BOOL(0);
+            let caret = pattern2.as_ref().ok().map(|tp| unsafe {
+                tp.GetCaretRange(&mut active)
+                    .and_then(|r| r.GetText(20))
+                    .map(|s| s.to_string())
+                    .map_err(|e| e.to_string())
+            });
+            Ok(
+                json!({"info":info,"readback":uia.read_back(&el),"selection_count":selection,"document":document,
+                "caret_pattern2":caret,"caret_active":active.as_bool()}),
+            )
+        }
         "capture" => {
             let pid = fixture_pid(request)?;
             if foreground::foreground().is_none_or(|f| f.pid != pid) {
