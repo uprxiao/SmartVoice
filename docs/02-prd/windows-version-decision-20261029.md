@@ -21,7 +21,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 | 设置页权限区块 | **未按平台区分**：始终显示“辅助功能”、黄色“未授权”标记以及“请求权限/打开系统设置”按钮；在 Windows 上无意义 | `desktop/src/renderer/views/SettingsView.tsx` |
 | 录音胶囊“未开启辅助功能”提示、首次登录授权框 | 已仅限 macOS（`darwin` 判断），Windows 上不弹 | `desktop/src/main/rpc.ts`、`index.ts` |
 | 麦克风权限检查 | **只在 `darwin` 分支**；Windows 完全不检查，系统禁用麦克风时没有明确引导 | `desktop/src/main/rpc.ts` |
-| 关闭主窗口 | `window-all-closed` 在非 macOS 直接退出；**无托盘**，没有“关闭后继续后台运行并可重新打开”的入口 | `desktop/src/main/index.ts` |
+| 关闭主窗口 | **（代码推断，V-15 复现）** 非 macOS 关闭主窗口即销毁；但录音胶囊窗口启动时创建并常驻（隐藏），`window-all-closed` 不触发，应用在后台不可见地继续运行：无任务栏图标、无托盘；再次启动 exe 时 `second-instance` 只在主窗口存在时才显示它，主窗口已销毁则无任何反应；没有退出入口（只能任务管理器）。即 Windows 上关掉主窗口后既打不开界面也退不出应用 | `desktop/src/main/index.ts`、`app/window.ts` |
 | 全局快捷键 | 默认 `CommandOrControl+Shift+Space`（Windows 即 Ctrl+Shift+Space）；Windows 保留表**不含**它（macOS 含 `Control+Shift+Space`） | `desktop/native/shortcut-policy.ts` |
 | 录音胶囊窗口 | 已 `focusable:false`、置顶；仅 macOS 使用 `panel` 类型 | `desktop/src/main/app/window.ts`、`native/hud-window-policy.ts` |
 | 安装包 | NSIS 目标已配置，CI 在 `windows-2022` 构建；**未签名**；完整业务验收未做 | `desktop/electron-builder.config.cjs`、`.github/workflows/build.yml` |
@@ -34,7 +34,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 2. Windows 原生辅助程序（沿用现有协议，除 `observe/keyDown/release`——属 v0.0.3 学习，本版不做）。
 3. 权限与界面按平台区分（§4）。
 4. 麦克风权限检查与引导；关闭窗口/托盘行为；Windows 快捷键保留表与默认值复核；多显示器 DPI 下录音胶囊定位。
-5. 技术验证（§6）、安装包与真机验收。
+5. 技术验证（§6）、安装包与真机验收；门户页的 Windows 下载与 SmartScreen 说明（门户不在仓库内，随 Windows 包发布时更新）。
 
 **范围外**：快速纠正学习（v0.0.3）；以管理员权限运行或 `uiAccess` 方案；Windows 代码签名（另行决定，§7 Q3）；Windows on ARM；Windows 以外的 Linux 桌面；输入法组合状态的探测（无可靠公开办法，列为已知限制）。
 
@@ -48,7 +48,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 | 插入失败卡片 | 复制结果 / 去授权 / 关闭 | 复制结果 / 关闭（无“去授权”）；按失败原因区分文案（管理员窗口、受保护输入框、目标已变化、无法核验） |
 | 麦克风 | 请求系统授权（`askForMediaAccess`） | Windows 无请求 API：读取状态（`getMediaAccessStatus`），被禁用则引导到系统设置，不重复弹窗；桌面应用由一个全局开关控制，改动后可能需要重启应用 |
 | 快捷键 | 保留表含 `Control+Shift+Space` | 保留表加入 `Shift+Space`、`Control+Space`（输入法键），并按 Windows 再复核；默认值沿用 `Ctrl+Shift+Space`，由 V-13 实测后定（Q2 已决） |
-| 关闭主窗口 | 窗口隐藏，应用继续运行（Dock） | 隐藏到托盘，应用继续运行；托盘菜单“打开 / 退出”；是否开机自启为设置项，默认关闭 |
+| 关闭主窗口 | 窗口隐藏，应用继续运行（Dock） | 隐藏到托盘，应用继续运行；托盘菜单“打开 / 退出”；是否开机自启为设置项，默认关闭（待 Q4 决定） |
 | 菜单 | macOS 应用菜单 | Windows 标准菜单（`menu.ts` 已有平台分支，需复核） |
 | 文案 | 提到 macOS 的路径与术语 | 全部文案（含 i18n 中英）按平台出对应版本；帮助页“权限”一节按平台显示 |
 
@@ -96,7 +96,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 | V-12 | 麦克风权限状态 | `getMediaAccessStatus('microphone')` 在 Windows 的各取值与“打开麦克风隐私设置”可用 | 真机 | 否 |
 | V-13 | 全局快捷键 | `register` 返回成功；在微软拼音、搜狗下按 `Ctrl+Shift+Space`，应用响应且输入法**不**同时响应（全角/半角、输入语言、输入法开关均不变）；同法实测备选 `Ctrl+Alt+Space`；据此确定 Windows 默认值（Q2） | 1（注册）+ 真机（输入法） | 否 |
 | V-14 | 原生辅助程序 | 长驻进程冷启动耗时、协议往返、崩溃重启、随安装包的路径（`extraResources`） | 1 | 是 |
-| V-15 | 托盘与生命周期 | 关闭主窗口后继续运行并可从托盘重新打开；单实例；安装/卸载 | 1 + 真机 | 否 |
+| V-15 | 托盘与生命周期 | **先复现现状缺陷**：关闭主窗口后进程仍在、无托盘、再次启动 exe 无反应、无退出入口；修复后：关闭主窗口后继续运行并可从托盘重新打开/退出；单实例；自启开关（Q4）；安装/卸载 | 1 + 真机 | 否 |
 
 阻断项全部通过前，不进入开发；非阻断项在开发中并行验证，S5 前必须全部有结论。
 
@@ -106,7 +106,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 |---|---|---|
 | Q1 | Windows 辅助程序语言 | **已决（本人 2026-10-29）：A，Rust**（`windows` crate，独立常驻进程、沿用 stdin/stdout 按行 JSON 协议）。理由：与 macOS 架构一致、故障隔离、无运行时依赖、协议与语言无关因此日后可低成本更换；体积与冷启动耗时由 V-14 实测，CI 是否预装 Rust 未核实（可由工作流 `rustup` 安装）。已否决：C#（运行时依赖/NativeAOT 对 COM 的限制）、C++（工程成本）、纯 TypeScript+koffi（无 COM 支持、故障会拖累主进程） |
 | Q2 | Windows 默认快捷键 | **已决（本人 2026-10-29）：A，先保持 `Ctrl+Shift+Space`，由 V-13 实测后再定。** 同步决定：①Windows 保留表立即加入 `Shift+Space`（输入法全角/半角）与 `Control+Space`（输入法开关），用户设成这两个时拒绝并提示；②V-13 同时实测备选 `Ctrl+Alt+Space`，默认值冲突时可直接换用，不再另起一轮验证；③无来源直接讨论 `Ctrl+Shift+Space`，是否冲突未知，不得在实测前下结论 |
-| Q3 | Windows 代码签名 | v0.0.2 仍发未签名预览包；2024 年起 EV 也不能绕过 SmartScreen，信誉靠累积；候选：SignPath Foundation（开源免费但需公开知名度并手动审批）、Azure Artifact Signing（个人仅美/加）、Certum 开源证书（私钥需硬件令牌）。需你决定发布者身份后另议 |
+| Q3 | Windows 代码签名 | **已决（本人 2026-10-29）：A，v0.0.2 不签名。** ①门户页与安装说明写清 SmartScreen“更多信息→仍要运行”的步骤，并列入已知限制；②请本人询问公司 IT 是否有企业代码签名证书或能否通过策略放行（待回复，无结果不阻塞）；③SignPath Foundation 暂不申请（项目刚公开、公开知名度不足，批准不确定，且发布者显示为 SignPath Foundation）；④Azure Artifact Signing 个人限美/加、组织限美/加/欧/英，按公开信息大概率不符合；⑤签名决定放在对外（非公司内网）公开发布 Windows 版之前。注意：签名不会让 SmartScreen 警告立即消失（2024 年起 EV 也不绕过，需累积信誉） |
 | Q4 | 关闭窗口行为与自启 | 关闭到托盘；开机自启做成设置项，默认关闭 |
 | Q5 | 借用的那台 Windows 的使用方式 | 先向机主问清：Windows 10 还是 11、物理机还是虚拟机、x64 还是 ARM、是否愿意安装软件、能否用测试用本地账号、使用哪种中文输入法。建议方式 C（机主按步骤运行验证脚本并回传结果文件）；SSH 直连因会话隔离做不了界面验证，只有“机主保持登录且不锁屏 + 交互式计划任务”才可行，须机主信任 |
 | Q6 | 支持的 Windows 版本 | 沿用现有约定 Windows 10/11 x64；Windows 10 已于 2025-10-14 结束主流支持，是否仍要求验收 Windows 10 请确认 |
