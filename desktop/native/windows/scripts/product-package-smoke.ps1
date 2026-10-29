@@ -79,7 +79,30 @@ try {
     $data.background=@{visible_count=$visible.Count;foreground_unchanged=($before -eq $foreground);helpers=$helpers.Count;real_bridge=$true}
     $rpcEvidence=Join-Path (Split-Path $EvidenceFile -Parent) 'product-rpc.json'
     & node (Join-Path $PSScriptRoot 'product-rpc-smoke.cjs') $debugPort $rpcEvidence
-    if ($LASTEXITCODE -ne 0) { throw 'Actual packaged local RPC/system startup test failed' }
+    if ($LASTEXITCODE -ne 0) {
+        $folder=Join-Path (Split-Path $EvidenceFile -Parent) 'startup-diagnostics'
+        [IO.Directory]::CreateDirectory($folder)|Out-Null
+        $fixtureInfo=[System.Diagnostics.ProcessStartInfo]::new($env:SVI_PROBE_FIXTURE)
+        $fixtureInfo.UseShellExecute=$false
+        $fixtureInfo.ArgumentList.Add('--probe-dir');$fixtureInfo.ArgumentList.Add($folder)
+        $diagnostic=[System.Diagnostics.Process]::Start($fixtureInfo)
+        try {
+            $until=[DateTime]::UtcNow.AddSeconds(15)
+            while (-not (Test-Path (Join-Path $folder 'ready.json'))) {
+                if([DateTime]::UtcNow -ge $until){throw 'Startup diagnostic fixture timeout'}
+                Start-Sleep -Milliseconds 50
+            }
+            Write-NewJson @{action='startup-diagnostics';productExe=$exe} (Join-Path $folder '1.request.tmp')
+            [IO.File]::Move((Join-Path $folder '1.request.tmp'),(Join-Path $folder '1.request.json'))
+            while (-not (Test-Path (Join-Path $folder '1.response.json'))) {
+                if([DateTime]::UtcNow -ge $until){throw 'Startup diagnostic response timeout'}
+                Start-Sleep -Milliseconds 50
+            }
+            $raw=Get-Content -Raw (Join-Path $folder '1.response.json')|ConvertFrom-Json
+            Write-NewJson $raw (Join-Path (Split-Path $EvidenceFile -Parent) 'product-startup-diagnostics.json')
+        } finally {if(-not $diagnostic.HasExited){$diagnostic.Kill($true);$diagnostic.WaitForExit(3000)|Out-Null}}
+        throw 'Actual packaged local RPC/system startup test failed; independent diagnostic preserved'
+    }
     $secondInfo=[System.Diagnostics.ProcessStartInfo]::new($exe)
     $secondInfo.UseShellExecute=$false
     $secondInfo.Environment['SVI_USER_DATA']=$start.Environment['SVI_USER_DATA']

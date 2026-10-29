@@ -63,6 +63,19 @@ async function pingNewHelper() {
 
 async function command(request) {
   switch (request.action) {
+    case 'startup-diagnostics': {
+      if (process.env.GITHUB_ACTIONS !== 'true' || path.basename(request.productExe || '') !== 'SmartVoiceInput.exe'
+        || !fs.existsSync(request.productExe)) throw new Error('disposable product fixture required');
+      const options={path:request.productExe,args:['--background']};
+      const initial=app.getLoginItemSettings(options);
+      if(initial.openAtLogin || initial.launchItems.some(item=>item.name==='SmartVoiceInput')) throw new Error('refusing to replace an existing startup entry');
+      let enabled;
+      try {
+        app.setLoginItemSettings({...options,name:'SmartVoiceInput',openAtLogin:true,enabled:true});
+        enabled=app.getLoginItemSettings(options);
+      } finally {app.setLoginItemSettings({...options,name:'SmartVoiceInput',openAtLogin:false,enabled:false});}
+      return {initial,enabled,final:app.getLoginItemSettings(options),scope:'independent Electron control using the actual product path; not a product fix'};
+    }
     case 'hud': {
       if (!hud) {
         // Same non-activating Windows options as desktop/src/main/app/window.ts.
