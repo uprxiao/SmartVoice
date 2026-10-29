@@ -33,22 +33,35 @@ function Product-Begin([string]$Action, [hashtable]$Data = @{}) {
     $request = @{} + $Data
     $request.id = $script:ProductCallId
     $request.action = $Action
+    $watch=[System.Diagnostics.Stopwatch]::StartNew()
     $script:Product.StandardInput.WriteLine(($request | ConvertTo-Json -Compress -Depth 12))
     $script:Product.StandardInput.Flush()
-    return @{request=$request;read=$script:Product.StandardOutput.ReadLineAsync()}
+    return @{request=$request;read=$script:Product.StandardOutput.ReadLineAsync();watch=$watch}
 }
 function Product-End([hashtable]$Pending) {
     $read = $Pending.read
     $request = $Pending.request
-    if (-not $read.Wait(5000) -or $null -eq $read.Result) { throw "Product helper timeout/disconnected: $($request.action); never replay" }
+    $remaining=[Math]::Max(0,5000-$Pending.watch.ElapsedMilliseconds)
+    if ($remaining -eq 0 -or -not $read.Wait([int]$remaining) -or $null -eq $read.Result) { throw "Product helper timeout/disconnected: $($request.action); never replay" }
     $response = $read.Result | ConvertFrom-Json
-    $callLog.WriteLine((@{kind='product';request=$request;response=$response} | ConvertTo-Json -Compress -Depth 20))
+    $callLog.WriteLine((@{kind='product';request=$request;response=$response;elapsed_ms=$Pending.watch.ElapsedMilliseconds} | ConvertTo-Json -Compress -Depth 20))
     $callLog.Flush()
     Assert-Probe ($response.id -eq $request.id) 'Product response id mismatch'
     return $response
 }
 function Product([string]$Action, [hashtable]$Data = @{}) {
     return Product-End (Product-Begin $Action $Data)
+}
+function Wait-FixtureConsumption([hashtable]$Pending) {
+    # Publication precedes the actual SendInput/final target checks. Observe consumption;
+    # a single early DOM read is not evidence that the eventual paste failed.
+    $watch=[Diagnostics.Stopwatch]::StartNew();$attempts=0
+    while($watch.ElapsedMilliseconds -lt 2000){
+        $actual=Fixture 'fieldState';$attempts++
+        if($Pending.read.IsCompleted){throw 'BLOCKED: product finished before the clipboard-race precondition could be acquired'}
+        if($actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1){return @{actual=$actual;wait_ms=$watch.ElapsedMilliseconds;attempts=$attempts}}
+    }
+    throw 'BLOCKED: target consumption was not observed before the bounded clipboard-race preparation ended'
 }
 function Product-Case([string]$Id, [scriptblock]$Body) {
     $started = [DateTime]::UtcNow

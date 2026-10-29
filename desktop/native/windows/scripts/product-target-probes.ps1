@@ -131,8 +131,8 @@ Product-Case 'TC-WIN-15-product-slow-uia' {
     while($watch.ElapsedMilliseconds -lt 1000){$state=Native 'probeClipboardState';if($state.text -ceq '中文🙂'){$publication=$state;break};if($pending.read.IsCompleted){break}}
     try {
         Assert-Probe ($null -ne $publication) 'Slow UIA publication was not observed'
-        $consumed=Fixture 'fieldState'
-        Assert-Probe ($consumed.value -ceq 'BEGIN 中文🙂 END' -and $consumed.chords.Count -eq 1) 'Slow UIA target did not first consume text'
+        $consumption=Wait-FixtureConsumption $pending
+        $consumed=$consumption.actual
         $block=Fixture 'blockMain' @{label='product-slow-uia';duration_ms=2000}
         $started=Join-Path $fixtureFolder 'product-slow-uia-started.json'
         $ended=Join-Path $fixtureFolder 'product-slow-uia-ended.json'
@@ -147,7 +147,7 @@ Product-Case 'TC-WIN-15-product-slow-uia' {
     } finally {$result=Product-End $pending}
     $final=Native 'probeClipboardState';$actual=Fixture 'fieldState'
     Assert-Probe (-not $result.clipboardRestored -and $final.sequence -eq $external.sequence -and $final.text -ceq 'SVI intervening clipboard' -and $actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1 -and $actual.enterCount -eq 0) 'Slow UIA clipboard handling changed external data or repeated paste'
-    Write-NewJson @{publication=$publication;block=$block;copy_ms=$copyMs;elapsed_ms=$watch.ElapsedMilliseconds;result=$result;external=$external;final=$final;actual=$actual} (Join-Path $OutputDir 'product-slow-uia.json')
+    Write-NewJson @{publication=$publication;consumption=$consumption;block=$block;copy_ms=$copyMs;elapsed_ms=$watch.ElapsedMilliseconds;result=$result;external=$external;final=$final;actual=$actual} (Join-Path $OutputDir 'product-slow-uia.json')
     $script:SlowUiaEvidence=@{result=$result;elapsed_ms=$watch.ElapsedMilliseconds;provider_block_ms=$block.duration_ms;copy_ms=$copyMs;actual=$actual}
     return @{result=$result;copy_ms=$copyMs;actual=$actual;final=$final;scope='independent fixture main/UIA thread blocked after actual paste; clipboard owner must keep pumping'}
 }

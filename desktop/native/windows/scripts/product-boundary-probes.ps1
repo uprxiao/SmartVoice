@@ -57,8 +57,8 @@ Product-Case 'TC-WIN-14-16-product' {
     }
     try {
         Assert-Probe ($null -ne $published) 'Did not observe the actual production clipboard publication'
-        $actual = Fixture 'fieldState'
-        Assert-Probe ($actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1) 'Target had not yet consumed the published text'
+        $consumption=Wait-FixtureConsumption $pending
+        $actual=$consumption.actual
         # Another process copies after consumption, before production's 350ms readback/restore.
         $external = Native 'probeSeedClipboard' @{kind='intervening'}
     } finally { $result = Product-End $pending }
