@@ -9,7 +9,8 @@
 | V1（口述、整理、插入、词库与修改学习、历史统计、管理后台） | 已完成开发与验收 |
 | V2（云端 ASR provider、后台模型服务管理） | 已完成开发与验收 |
 | 辅助功能未授权提示（TC-INSERT-22） | 已完成，随 v0.0.1 发布 |
-| 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划在 v0.0.2 |
+| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | S0/S1 [决策稿](02-prd/windows-version-decision-20261029.md)已起草，**待评审**；先做技术验证（GitHub 托管 Windows 机）再进入设计与开发 |
+| 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划顺延到 v0.0.3（v0.0.2 先做 Windows 版） |
 
 已知限制：Mac 预览包未经 Apple 签名与公证；Windows 安装包未签名，完整业务验收未完成；长期稳定性待上线后跟踪。
 
@@ -25,4 +26,5 @@
 
 ## 待决问题
 
+- Windows 版本（v0.0.2）[范围与技术验证决策稿](02-prd/windows-version-decision-20261029.md)待本人评审：Q1 辅助程序语言、Q2 默认快捷键、Q3 代码签名、Q4 关闭与自启、Q5 借用 Windows 的使用方式、Q6 Windows 10 是否验收、Q7 管理员窗口；评审前不进入开发，技术验证需推送分支（待授权）。
 - 快速纠正学习 S1 [需求变更](02-prd/fast-correction-learning-decision-20261028.md)、S2 [技术方案](03-architecture/fast-correction-learning-design-20261028.md)、S3 用例（TC-LEARN-16～31）待本人评审后进入开发。
