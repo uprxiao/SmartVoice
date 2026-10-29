@@ -9,11 +9,12 @@ use windows::Win32::Security::{
     TokenIntegrityLevel, TokenPrimary, WinMediumLabelSid, PSID, SID_AND_ATTRIBUTES,
     TOKEN_ALL_ACCESS, TOKEN_MANDATORY_LABEL,
 };
+use windows::Win32::System::Environment::{FreeEnvironmentStringsW, GetEnvironmentStringsW};
 use windows::Win32::System::SystemServices::SE_GROUP_INTEGRITY;
 use windows::Win32::System::Threading::{
     CreateProcessWithTokenW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken,
     TerminateProcess, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_PROCESS_LOGON_FLAGS,
-    PROCESS_INFORMATION, STARTUPINFOW,
+    CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTUPINFOW,
 };
 
 pub fn medium(program: &Path, arguments: &[String], timeout_ms: u32) -> R<u32> {
@@ -69,24 +70,39 @@ pub fn medium(program: &Path, arguments: &[String], timeout_ms: u32) -> R<u32> {
                 ..Default::default()
             };
             let mut child = PROCESS_INFORMATION::default();
-            CreateProcessWithTokenW(
+            // NULL does not inherit the caller's Actions environment: this API builds an
+            // environment from the user profile instead. Preserve the current Unicode block
+            // without serialising it (it may contain credentials).
+            let environment = GetEnvironmentStringsW();
+            if environment.is_null() {
+                return Err("GetEnvironmentStringsW failed".into());
+            }
+            let created = CreateProcessWithTokenW(
                 token,
                 CREATE_PROCESS_LOGON_FLAGS(0),
                 PCWSTR(executable.as_ptr()),
                 Some(PWSTR(command.as_mut_ptr())),
-                CREATE_NO_WINDOW,
-                None,
+                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                Some(environment.0 as *const _),
                 None,
                 &startup,
                 &mut child,
-            )
-            .map_err(ctx("CreateProcessWithTokenW(medium)"))?;
+            );
+            let _ = FreeEnvironmentStringsW(environment);
+            created.map_err(ctx("CreateProcessWithTokenW(medium)"))?;
+            eprintln!("medium child created: pid={}", child.dwProcessId);
             let _ = CloseHandle(child.hThread);
             let wait = WaitForSingleObject(child.hProcess, timeout_ms);
             let output = if wait == WAIT_OBJECT_0 {
                 let mut code = 1u32;
                 GetExitCodeProcess(child.hProcess, &mut code)
-                    .map(|_| code)
+                    .map(|_| {
+                        eprintln!(
+                            "medium child exited: pid={}, code={code}",
+                            child.dwProcessId
+                        );
+                        code
+                    })
                     .map_err(ctx("GetExitCodeProcess"))
             } else {
                 let _ = TerminateProcess(child.hProcess, 124);

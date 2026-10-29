@@ -14,6 +14,7 @@ pub mod integrity;
 pub mod keys;
 #[cfg(windows)]
 pub mod launch;
+pub mod modifier_policy;
 #[cfg(windows)]
 pub mod modifier_watch;
 #[cfg(windows)]

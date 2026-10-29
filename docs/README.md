@@ -26,5 +26,7 @@
 
 ## 待决问题
 
+- Windows 技术验证 V-04 的门禁层级待澄清：决策稿 §6 指定阶段 1 完全在无人操作的托管机运行，但 V-04 同时写“用户按住 Ctrl+Shift”。拟采用托管机真实键状态/目标一次 Ctrl+V/无卡键，以及物理事件来源与恢复策略单测作为阶段 1 证据；物理键盘按住/提前释放继续列为 S5 真机必验。尚未按此解释放行阻断项，已向本人提出澄清。
+
 - Windows 版本（v0.0.2）范围与 Q1–Q7 已确认，不重复请求评审；本人于 2026-10-29 明确授权推送并按既定门禁继续 S0–S4，同范围验证修复沿用该授权。当前待办是[技术验证](03-architecture/windows-technical-verification.md)：本地检查及 Windows 构建已通过，首轮在环境记录步骤失败，修复后重跑；未记录行为阻断项通过。既有通用 PRD/设计/用例与 v0.0.3 学习草稿不替代 Windows 专属 S0–S3。
 - 快速纠正学习 S1 [需求变更](02-prd/fast-correction-learning-decision-20261028.md)、S2 [技术方案](03-architecture/fast-correction-learning-design-20261028.md)、S3 用例（TC-LEARN-16～31）待本人评审后进入开发。

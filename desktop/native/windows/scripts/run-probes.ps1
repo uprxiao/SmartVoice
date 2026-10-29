@@ -51,13 +51,21 @@ if (-not $Worker) {
         Write-NewJson $parent (Join-Path $OutputDir 'parent-preflight.json')
         if ($parent.integrity_rid -lt 12288) { throw 'High-integrity parent needed for the UIPI fixture; do not silently omit V-07' }
         Assert-Probe $parent.input_desktop_accessible 'No accessible interactive input desktop'
+        $childPreflightFile = Join-Path $OutputDir 'medium-launch-preflight.json'
+        & $Verify --medium $Verify --preflight-file $childPreflightFile
+        $launchCode = $LASTEXITCODE
+        Write-NewJson @{exit_code=$launchCode;preflight_present=(Test-Path $childPreflightFile)} (Join-Path $OutputDir 'medium-launch.json')
+        Assert-Probe ($launchCode -eq 0 -and (Test-Path $childPreflightFile)) 'Medium launcher did not complete its independent native preflight'
+        $childPreflight = Get-Content -Raw $childPreflightFile | ConvertFrom-Json
+        Assert-Probe ($childPreflight.integrity_rid -eq 8192 -and $childPreflight.environment_present.CARGO_TARGET_DIR) 'Medium child lost runtime environment or integrity'
         $highFile = Join-Path $OutputDir 'high-target.txt'
         [System.IO.File]::WriteAllText($highFile, 'HIGH fixture must remain unchanged', $Utf8)
         $high = Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($highFile)
         $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
         & $Verify --medium $pwsh -NoProfile -File $PSCommandPath -Worker -OutputDir $OutputDir -FixtureExe $FixtureExe -ChromeExe $ChromeExe -CodeExe $CodeExe -HighTargetId $high.Id
         $workerCode = $LASTEXITCODE
-        Assert-Probe (Test-Path (Join-Path $OutputDir 'summary.json')) 'Worker did not produce summary; keep parent preflight and failure'
+        Write-NewJson @{exit_code=$workerCode;summary_present=(Test-Path (Join-Path $OutputDir 'summary.json'))} (Join-Path $OutputDir 'worker-launch.json')
+        Assert-Probe (Test-Path (Join-Path $OutputDir 'summary.json')) "Worker did not produce summary (exit $workerCode); keep parent preflight and failure"
         if ($workerCode -ne 0) { throw "Windows technical gate not passed (exit $workerCode); inspect complete report" }
     } catch {
         Write-NewJson @{error=$_.Exception.Message;at=[DateTime]::UtcNow.ToString('o')} (Join-Path $OutputDir 'parent-failure.json')

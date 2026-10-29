@@ -24,20 +24,33 @@ fn run() -> svi_input_win::R<()> {
     }
     #[cfg(windows)]
     {
-        if args.first().map(String::as_str) == Some("--preflight") && args.len() == 1 {
+        let preflight_file =
+            args.first().map(String::as_str) == Some("--preflight-file") && args.len() == 2;
+        if (args.first().map(String::as_str) == Some("--preflight") && args.len() == 1)
+            || preflight_file
+        {
             use windows::Win32::UI::WindowsAndMessaging::{
                 GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
             };
             let rid = svi_input_win::integrity::own_rid()?;
-            println!(
-                "{}",
-                serde_json::json!({"pid":std::process::id(),"integrity_rid":rid,
+            let environment_present = ["CARGO_TARGET_DIR", "GITHUB_ACTIONS", "SVI_PROBE_EVIDENCE"]
+                .iter()
+                .map(|key| (*key, std::env::var_os(key).is_some()))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let report = serde_json::json!({"pid":std::process::id(),"integrity_rid":rid,
                 "integrity":svi_input_win::integrity::level_name(rid),
                 "input_desktop_accessible":svi_input_win::foreground::input_desktop_accessible(),
                 "foreground":svi_input_win::foreground::foreground(),
                 "screen_width_px":unsafe { GetSystemMetrics(SM_CXSCREEN) },
-                "screen_height_px":unsafe { GetSystemMetrics(SM_CYSCREEN) }})
-            );
+                "screen_height_px":unsafe { GetSystemMetrics(SM_CYSCREEN) },
+                "environment_present": environment_present });
+            if preflight_file {
+                use std::io::Write;
+                let mut out = std::fs::File::create_new(&args[1]).map_err(|e| e.to_string())?;
+                writeln!(out, "{}", report).map_err(|e| e.to_string())?;
+            } else {
+                println!("{report}");
+            }
             return Ok(());
         }
         if args.first().map(String::as_str) == Some("--medium") && args.len() >= 2 {
