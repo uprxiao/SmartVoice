@@ -53,7 +53,7 @@ Windows 的 `trusted:true` 只兼容现有“可尝试原生输入”调用链�
 2. helper 在有界等待修饰键释放后选取最终目标；不能把独立探针里“固定夹具 PID”的限制复制到正式通用输入。正常路径不恢复焦点；显式路径只在用户明确选择、可核验且当前仍是本应用/原目标时尝试恢复，必须读回实际前台与焦点成功，失败就保留结果。
 3. 准入核当前可见顶层应用窗口、非本应用/桌面/任务栏、可访问交互桌面、PID+进程创建时间、完整性级别。普通应用拒绝更高 IL；读取失败不靠 TokenElevation 或 SendInput 成功值推定可输入。
 4. UIA 可读时先核密码/保护/禁用/只读；明确按钮、菜单等非输入控件拒绝。Custom/Pane 等未知属性不能仅因不可读而一律拒绝。每次正文读回前再次检查保护属性，不读已知密码内容；未知安全属性仍有已明示限制。
-5. 本地读取最终控件正文与选区，用于严格核验。优先 TextPattern；经典 `Edit` 只有 ValuePattern 时，向同 PID、当前 hwndFocus 的原生 Edit 发只读 `EM_GETSEL`，使用 32 位返回位置和 150ms 消息超时，不猜光标。空正文+合法光标是正常空输入框，不可一律当失败；Chromium 首次尚无 pattern/选区可有界重试，正文与选区无法一致则保持不可核验。正文/选区缺失仍可一次粘贴。全文最大 200000 UTF-16 单元，越界不记录可核验成功。
+5. 本地读取最终控件正文与选区，用于严格核验。优先 TextPattern；经典 `Edit` 只有 ValuePattern 时，向同 PID、当前 hwndFocus 的原生 Edit 发只读 `EM_GETSEL`，使用 32 位返回位置和 150ms 消息超时，不猜光标。空正文+合法光标是正常空输入框，不可一律当失败。S4 对照实测补充：Chromium Edit 的 TextPattern 可能以单个 U+FFFC 表示空控件，仅在 ValuePattern 独立明确为空、零光标/选区、无嵌入子对象时规范化；真实 U+FFFC 与其他差异仍原样比较（[Chromium 源码依据](https://chromium.googlesource.com/chromium/src/+/main/ui/accessibility/ax_position.h)）。Chromium 首次尚无 pattern/选区可有界重试，正文与选区无法一致则保持不可核验。正文/选区缺失仍可一次粘贴。全文最大 200000 UTF-16 单元，越界不记录可核验成功。
 6. 剪贴板可安全快照后写入文字与排除格式，最终再紧邻核当前目标、保护状态、控件身份及剪贴板版本；变化期间正常路径重新采用最新合格位置，不能写回旧位置。最终核查后发生变化且无法安全重取则明确零写入。
 7. `SendInput` 一次投递普通 Ctrl+V；不发 Enter、不调用 UIA SetValue/全文 setter，不作第二次输入。调用返回的事件数只表明系统接受事件，不证明目标收到。
 8. 等待目标处理，350ms 后开始有界读回，最多再等 1000ms。全文必须逐字符等于“当前前缀+原样结果+当前后缀”，光标位于结果末尾且选区长度为零，目标仍为同控件，才 inserted/written/observable=true。否则 unverified/unknown；UTF-16 边界不能拆代理对，跨业务层偏移仍按码点换算。
@@ -89,7 +89,7 @@ API、数据库和 Admin 不增加 Windows 原生错误枚举。细分原因/平
 microphone: { status: 'granted'|'denied'|'restricted'|'not-determined'|'unknown'; error: boolean };
 nativeInputSupported: boolean;
 correctionObservationSupported: boolean;
-autoStart: { supported: boolean; configurable: boolean; registered: boolean; enabled: boolean; systemDisabled: boolean };
+autoStart: { supported: boolean; configurable: boolean; registered: boolean; enabled: boolean; systemDisabled: boolean; error: boolean };
 ```
 
 `app.info` 从 Main 读系统状态，异常返回 unknown/error，不造 granted。新增 `app.openMicrophoneSettings()`、`app.openStartupSettings()`、`app.updateAutoStart(enabled:boolean)`，仅白名单主窗口可调用；参数做运行时 boolean 校验，Renderer 不能传任意 URI、注册表路径或可执行文件。Mac 既有 AX 方法保留并加平台边界。

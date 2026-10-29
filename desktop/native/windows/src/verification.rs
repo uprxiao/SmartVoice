@@ -15,6 +15,27 @@ pub struct Expected {
     pub caret_utf16: usize,
 }
 
+/// Chromium represents an empty atomic edit as an object navigation character.
+/// Normalize only when independent ValuePattern, selection and embedded-child facts agree.
+/// Literal U+FFFC, rich embedded objects, missing selection and any other provider remain intact.
+pub fn normalize_empty_edit(
+    read: &mut Readback,
+    chromium_edit: bool,
+    value: Option<&str>,
+    no_embedded_children: bool,
+) {
+    if chromium_edit
+        && value == Some("")
+        && no_embedded_children
+        && read.text == "\u{fffc}"
+        && read.caret_utf16 == Some(0)
+        && read.selection_utf16_len == Some(0)
+    {
+        read.text.clear();
+        read.source = "text_pattern+empty_value".into();
+    }
+}
+
 pub fn expected_after(before: &Readback, inserted: &str) -> Option<Expected> {
     let start = before.caret_utf16?;
     let end = start.checked_add(before.selection_utf16_len?)?;
@@ -82,5 +103,29 @@ mod tests {
         }
         assert!(!exactly_matches(Some(&e), None));
         assert!(!exactly_matches(None, Some(&read("AXD", Some(2), Some(0)))));
+    }
+    #[test]
+    fn chromium_navigation_placeholder_needs_independent_empty_value_and_zero_selection() {
+        let mut empty = read("\u{fffc}", Some(0), Some(0));
+        normalize_empty_edit(&mut empty, true, Some(""), true);
+        assert_eq!(
+            expected_after(&empty, "中文🙂").unwrap(),
+            Expected {
+                text: "中文🙂".into(),
+                caret_utf16: 4
+            }
+        );
+        for (is_edit, value, children, caret, len) in [
+            (true, Some("\u{fffc}"), true, Some(0), Some(0)),
+            (true, None, true, Some(0), Some(0)),
+            (false, Some(""), true, Some(0), Some(0)),
+            (true, Some(""), false, Some(0), Some(0)),
+            (true, Some(""), true, None, Some(0)),
+            (true, Some(""), true, Some(0), Some(1)),
+        ] {
+            let mut r = read("\u{fffc}", caret, len);
+            normalize_empty_edit(&mut r, is_edit, value, children);
+            assert_eq!(r.text, "\u{fffc}");
+        }
     }
 }

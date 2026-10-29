@@ -239,12 +239,34 @@ impl Uia {
                 let doc = tp.DocumentRange().map_err(ctx("DocumentRange"))?;
                 let text = doc.GetText(200001).map_err(ctx("GetText"))?.to_string();
                 let (caret, sel_len) = selection_of(&tp, &doc);
-                return Ok(Readback {
+                let mut read = Readback {
                     source: "text_pattern".into(),
                     text,
                     caret_utf16: caret,
                     selection_utf16_len: sel_len,
-                });
+                };
+                // Chromium AXPosition::IsEmptyObject exposes a navigation placeholder for empty edits.
+                // https://chromium.googlesource.com/chromium/src/+/main/ui/accessibility/ax_position.h
+                if read.text == "\u{fffc}" {
+                    let value = el
+                        .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                        .and_then(|v| v.CurrentValue())
+                        .ok()
+                        .map(|v| v.to_string());
+                    let framework = el.CurrentFrameworkId().ok().map(|v| v.to_string());
+                    let edit = el.CurrentControlType().is_ok_and(|t| t.0 == 50004);
+                    let no_children = doc
+                        .GetChildren()
+                        .and_then(|c| c.Length())
+                        .is_ok_and(|n| n == 0);
+                    crate::verification::normalize_empty_edit(
+                        &mut read,
+                        edit && framework.as_deref() == Some("Chrome"),
+                        value.as_deref(),
+                        no_children,
+                    );
+                }
+                return Ok(read);
             }
             let vp = el
                 .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
