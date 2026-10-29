@@ -286,8 +286,16 @@ try {
             try {
             $page = [System.Uri]::new((Join-Path $NativeRoot 'fixtures/chrome.html')).AbsoluteUri + '?kind=' + $kind
             $profile = Join-Path $OutputDir "chrome-$kind"
-            $chrome = Start-Owned $ChromeExe @("--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync', "--app=$page")
-            $preparation = Wait-OwnedWindow $chrome
+            $chromeListener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$chromeListener.Start()
+            $chromeDebugPort=$chromeListener.LocalEndpoint.Port;$chromeListener.Stop()
+            $chrome = Start-Owned $ChromeExe @("--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync', "--app=$page", "--remote-debugging-port=$chromeDebugPort", '--remote-debugging-address=127.0.0.1')
+            $domEvidence=Join-Path $OutputDir "V-03-$kind-dom-ready.json"
+            & node (Join-Path $PSScriptRoot 'chrome-ready.cjs') $chromeDebugPort $page 45000 $domEvidence
+            Assert-Probe ($LASTEXITCODE -eq 0) 'BLOCKED: owned Chrome DOM input was not ready; inspect independent readiness evidence'
+            $preparation=Get-Content -Raw $domEvidence|ConvertFrom-Json
+            # The following Focus-Target verifies the actual Win32 foreground.
+            # .NET MainWindowHandle can be 0 for an existing Chrome app window.
+            # DOM preparation never queries UIA, preserving the first-read case.
             $insert = if ($kind -eq 'input') { '中文🙂 Docker' } else { "中文🙂`nDocker" }
             $expected = "BEGIN $insert END"
             $observation = Paste-Selection $chrome.Id $insert 'BEGIN React END' 5 $expected

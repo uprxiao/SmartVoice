@@ -36,12 +36,20 @@ async function until(expression,timeout=15000){
   throw Error('Owned DOM condition not met');
 }
 async function click(selector){
-  const point=await evaluate(`(()=>{const nodes=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e=>e.getClientRects().length);if(nodes.length!==1)throw Error('Ambiguous visible target');const e=nodes[0];e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();if(e.disabled)throw Error('Disabled target');return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
-  for(const type of ['mouseMoved','mousePressed','mouseReleased'])await cdp('Input.dispatchMouseEvent',{type,...point,button:type==='mouseMoved'?'none':'left',clickCount:type==='mouseMoved'?0:1});
+  let point;const end=Date.now()+15000;
+  do{
+    point=await evaluate(`(()=>{const nodes=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e=>e.getClientRects().length);if(nodes.length!==1)throw Error('Ambiguous visible target');const e=nodes[0];e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();if(e.disabled)throw Error('Disabled target');const x=r.x+r.width/2,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);return {x,y,hit:hit===e||e.contains(hit),target:e.textContent.trim(),hit_text:hit?.textContent?.trim().slice(0,500),hit_aria:hit?.getAttribute('aria-label')};})()`);
+    if(phase!=='history'||point.hit)break;
+    report.occluded_pointer_targets??=[];
+    if(report.occluded_pointer_targets.length<40)report.occluded_pointer_targets.push({...point,at:new Date().toISOString()});
+    if(Date.now()>=end)throw Error('History control remained covered; no click dispatched');
+    await pause(100);
+  }while(true);
+  if(phase==='history'){report.pointer_actions??=[];report.pointer_actions.push({...point,at:new Date().toISOString()});}
+  for(const type of ['mouseMoved','mousePressed','mouseReleased'])await cdp('Input.dispatchMouseEvent',{type,x:point.x,y:point.y,button:type==='mouseMoved'?'none':'left',clickCount:type==='mouseMoved'?0:1});
 }
 async function button(text,scope='body'){
-  const selector=await evaluate(`(()=>{const matches=[...document.querySelectorAll(${JSON.stringify(scope+' button')})].filter(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getClientRects().length);if(matches.length!==1)throw Error('Ambiguous exact button');const e=matches[0];return [...document.querySelectorAll('button')].indexOf(e);})()`);
-  const css=await evaluate(`(()=>{let e=document.querySelectorAll('button')[${selector}],parts=[];while(e&&e.tagName!=='HTML'){let tag=e.tagName.toLowerCase();parts.unshift(tag+':nth-of-type('+([...e.parentElement.children].filter(n=>n.tagName===e.tagName).indexOf(e)+1)+')');e=e.parentElement;}return parts.join(' > ');})()`);
+  const css=await evaluate(`(()=>{const matches=[...document.querySelectorAll(${JSON.stringify(scope+' button')})].filter(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getClientRects().length);if(matches.length!==1)throw Error('Ambiguous exact button');let e=matches[0],parts=[];while(e&&e.tagName!=='HTML'){let tag=e.tagName.toLowerCase();parts.unshift(tag+':nth-of-type('+([...e.parentElement.children].filter(n=>n.tagName===e.tagName).indexOf(e)+1)+')');e=e.parentElement;}return parts.join(' > ');})()`);
   await click(css);
 }
 async function fill(selector,value){
@@ -77,7 +85,7 @@ async function startOwnedProbe(){
   return targets;
 }
 async function observeOS(action,data={}){
-  check(['ping','probeFocus','probeSelect','capture','probeSeedClipboard','probeClipboardState'].includes(action),'OS control action outside frozen preparation/readback scope');
+  check(['ping','foreground','probeFocus','probeSelect','capture','probeSeedClipboard','probeClipboardState'].includes(action),'OS control action outside frozen preparation/readback scope');
   const request={id:++nativeSequence,action,...data};
   const response=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{nativePending.delete(request.id);reject(Error('Independent OS preparation/readback timeout'));},6500);nativePending.set(request.id,{resolve,reject,timer});native.stdin.write(JSON.stringify(request)+'\n');});
   report.native_actions.push({request,response});return response;
@@ -85,6 +93,26 @@ async function observeOS(action,data={}){
 async function notepadFacts(targets){
   check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
   return (await observeOS('capture',{fixture_pid:targets.notepad_pid})).readback;
+}
+async function focusMainPage(targets){
+  check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned application did not become foreground');
+  // A PID also owns the HUD. Bring this exact, already validated Main page to
+  // front, then independently confirm the top-level title and process.
+  await cdp('Page.bringToFront');
+  const title=await evaluate('document.title');
+  const end=Date.now()+1000;
+  do{const foreground=await observeOS('foreground');if(foreground.root?.pid===targets.main_pid&&foreground.root.title===title)return;await pause(20);}while(Date.now()<end);
+  throw Error('Exact owned Main page did not become foreground');
+}
+async function waitRetarget(targets){
+  const end=Date.now()+15000;report.retarget_ui_checks=[];let previous;
+  while(Date.now()<end){
+    const state=await evaluate(`({side:document.querySelector('aside.home-sidebar')?.innerText,buttons:[...document.querySelectorAll('button')].filter(e=>['插入到当前输入框','重新指定目标'].includes(e.textContent.trim())).map(e=>({text:e.textContent.trim(),disabled:e.disabled})),toasts:[...document.querySelectorAll('[aria-label="关闭提示"]')].map(e=>e.parentElement.innerText)})`);
+    const key=JSON.stringify(state);if(key!==previous){report.retarget_ui_checks.push({...state,at:new Date().toISOString()});previous=key;}
+    if(state.side?.includes('PID '+targets.notepad_pid)&&state.buttons.some(b=>b.text==='插入到当前输入框'&&!b.disabled))return;
+    await pause(100);
+  }
+  throw Error('Owned retarget readiness not obtained; actual UI/toast trace retained');
 }
 function exactNative(actual,text,caret,selection){check(actual?.text===text&&actual.caret_utf16===caret&&actual.selection_utf16_len===selection,'Independent Notepad full text/caret/selection differs');}
 const storageExpression=`(()=>{const localKeys=Object.keys(localStorage),sessionKeys=Object.keys(sessionStorage);const cookieNames=document.cookie.split(';').map(item=>item.split('=')[0].trim()).filter(Boolean);const values=[...localKeys.map(key=>localStorage.getItem(key)),...sessionKeys.map(key=>sessionStorage.getItem(key)),document.cookie];return {localKeys,sessionKeys,cookieNames,credentialValueDetected:values.some(value=>/eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+/.test(String(value)))};})()`;
@@ -155,18 +183,18 @@ async function privacy(){
       check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
       await observeOS('probeSelect',{fixture_pid:targets.notepad_pid,start:0,length:0});
       exactNative(await notepadFacts(targets),'BEGIN React END',0,0);
-      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await focusMainPage(targets);
       await button('插入到当前输入框');
       await until(`[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='重新指定目标'&&!e.disabled)`);
       exactNative(await notepadFacts(targets),'BEGIN React END',0,0);
-      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await focusMainPage(targets);
       await button('重新指定目标');
       check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned Notepad did not become foreground');
       await observeOS('probeSelect',{fixture_pid:targets.notepad_pid,start:6,length:5});
       exactNative((await observeOS('capture',{fixture_pid:targets.notepad_pid})).readback,'BEGIN React END',6,5);
-      await until(`document.querySelector('aside.home-sidebar')?.innerText.includes(${JSON.stringify('PID '+targets.notepad_pid)})&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
+      await waitRetarget(targets);
       await observeOS('probeSeedClipboard');
-      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await focusMainPage(targets);
       await button('插入到当前输入框');
       await until(`document.body.innerText.includes('已插入到目标输入框')&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
       const actual=await notepadFacts(targets);exactNative(actual,seeded.expected_native_text,seeded.expected_caret_utf16,0);
@@ -175,7 +203,7 @@ async function privacy(){
     });
     await caseRun('LIVE-HISTORY-03',async()=>{
       if(report.cases[1].status!=='pass')throw Error('BLOCKED: first actual insertion did not pass');
-      check((await observeOS('probeFocus',{fixture_pid:targets.main_pid})).focused,'Owned Main did not become foreground');
+      await focusMainPage(targets);
       await button('插入到当前输入框');await pause(200);
       await until(`[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
       const actual=await notepadFacts(targets);exactNative(actual,seeded.expected_native_text,seeded.expected_caret_utf16,0);
