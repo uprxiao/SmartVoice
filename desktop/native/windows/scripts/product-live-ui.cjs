@@ -51,7 +51,13 @@ async function fill(selector,value){
 async function caseRun(id,body){
   const row=report.cases.find(x=>x.id===id);row.started_at=new Date().toISOString();
   try{row.observations=await body();row.status='pass';}
-  catch(error){row.status=error.message.startsWith('BLOCKED:')?'blocked':'fail';row.error=error.message.replaceAll(credentials.password,'[redacted]').replace(/eyJ[A-Za-z0-9_.-]+/g,'[redacted-token]');}
+  catch(error){
+    row.status=error.message.startsWith('BLOCKED:')?'blocked':'fail';row.error=error.message.replaceAll(credentials.password,'[redacted]').replace(/eyJ[A-Za-z0-9_.-]+/g,'[redacted-token]');
+    try{
+      const snapshot=await evaluate(`({ready_state:document.readyState,visibility:document.visibilityState,nav_count:document.querySelectorAll('nav').length,email_input_present:Boolean(document.querySelector('input[type=email]')),settings_present:Boolean(document.querySelector('[aria-label="关闭设置"]')),text:document.body.textContent?.slice(0,9000),rendered_text:document.body.innerText?.slice(0,9000)})`);
+      row.failure_ui=JSON.parse(JSON.stringify(snapshot).replaceAll(credentials.password,'[redacted]').replace(/eyJ[A-Za-z0-9_.-]+/g,'[redacted-token]'));
+    }catch{row.failure_snapshot_unavailable=true;}
+  }
   row.ended_at=new Date().toISOString();
 }
 async function closeSettings(){if(await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`))await click('[aria-label="关闭设置"]');}

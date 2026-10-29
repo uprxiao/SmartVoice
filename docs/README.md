@@ -36,6 +36,8 @@ Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参�
 
 `5356e4e` 的[两轮实际安装/卸载/重装](https://github.com/uprxiao/SmartVoice/actions/runs/40933749977)通过：含空格/中文路径的安装资源摘要、真实Main自启、卸载仅清自有Run/StartupApproved、其他虚构启动项及用户文件保留、重装默认off均核对。后续[54 参数矩阵](https://github.com/uprxiao/SmartVoice/actions/runs/40935021016)为53通过、1个有效历史目标恢复失败；最新位置/A-B-C、历史变更拒绝、慢UIA时跨进程复制、CRLF/LF原始读回均通过。恢复组正在做Win32激活与UIA SetFocus独立对照；托管机真实麦克风状态为denied，标准合成设备下的真实API状态另验，不绕过Main权限门禁或记为真实音频通过。
 
+最新接续：正式 helper 已修复迟到读回与显式目标根身份校验。[静态 CRT 的56参数实测](https://github.com/uprxiao/SmartVoice/actions/runs/40953466542)全部通过，含同进程/同拥有者链的不同根窗口零写入反例；L2、开发资源、NSIS资源三处 helper 摘要一致。真实客户端/PG/API 已通过注册、权限加载与拒绝录音5组，但强制退出后的保存账号恢复尚失败，剩余流程继续定位，S4未宣称完整通过。[三原生架构安装包构建](https://github.com/uprxiao/SmartVoice/actions/runs/40947639892)及其完整CI通过，另有[最新生产代码完整CI](https://github.com/uprxiao/SmartVoice/actions/runs/40949867432)通过；该构建的Windows包早于焦点修复，仅留作构建证据，不能替代最终验收包。Mac两架构包已本地核对结构/架构/CA和实际Electron版本，x64本地运行经Rosetta；均不替代S5真机。
+
 ## 文档
 
 | 目录 | 内容 |

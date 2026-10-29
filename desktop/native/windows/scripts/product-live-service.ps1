@@ -17,7 +17,7 @@ $electron=Join-Path $repo 'desktop/node_modules/electron/dist/electron.exe'
 $profileDir=Join-Path $EvidenceDir 'desktop-profile'
 $environment=Join-Path $EvidenceDir 'environment.json'
 $server=$null;$desktop=$null;$second=$null;$browser=$null;$serverOut=$null;$serverErr=$null
-$data=[ordered]@{source_sha=$env:GITHUB_SHA;status='not_run';scope='real Windows Main/preload + real isolated HTTP/PostgreSQL/Admin; mock providers, no hardware/audio/model/S5 pass';desktop_stops=@()}
+$data=[ordered]@{source_sha=$env:GITHUB_SHA;status='not_run';scope='real Windows Main/preload + real isolated HTTP/PostgreSQL/Admin; mock providers, no hardware/audio/model/S5 pass';desktop_stops=@();profile_lifecycle=@()}
 if(-not ('SviLiveWindows' -as [type])){Add-Type @'
 using System;
 using System.Collections.Generic;
@@ -69,10 +69,66 @@ function Snapshot([string]$Name){
     Write-NewJson $snapshot (Join-Path $EvidenceDir $Name)
     return $snapshot
 }
+function Profile-Facts([string]$Label){
+    $authFacts=@()
+    foreach($file in @(Get-ChildItem -LiteralPath $profileDir -Filter 'auth-*.bin' -File)){
+        $bytes=[IO.File]::ReadAllBytes($file.FullName)
+        $prefix=if($bytes.Length -ge 3){[Text.Encoding]::ASCII.GetString($bytes,0,3)}else{''}
+        $authFacts+=@{bytes=$bytes.Length;sha256=(Get-FileHash $file.FullName).Hash;known_cipher_prefix=$(if($prefix -in @('v10','v11')){$prefix}else{'opaque'})}
+    }
+    $local=Join-Path $profileDir 'Local State'
+    $stateFacts=@{present=(Test-Path -LiteralPath $local);parseable_json=$false;encrypted_key_present=$false;app_bound_key_present=$false}
+    if($stateFacts.present){
+        $stateFacts.bytes=(Get-Item -LiteralPath $local).Length;$stateFacts.sha256=(Get-FileHash -LiteralPath $local).Hash
+        try{
+            $state=Get-Content -Raw -LiteralPath $local|ConvertFrom-Json;$stateFacts.parseable_json=$true
+            $crypto=$state.PSObject.Properties['os_crypt']
+            if($null -ne $crypto){
+                $key=$crypto.Value.PSObject.Properties['encrypted_key'];$bound=$crypto.Value.PSObject.Properties['app_bound_encrypted_key']
+                $stateFacts.encrypted_key_present=($null -ne $key -and -not [string]::IsNullOrEmpty($key.Value))
+                $stateFacts.app_bound_key_present=($null -ne $bound -and -not [string]::IsNullOrEmpty($bound.Value))
+            }
+        }catch{}
+    }
+    $deviceFile=Join-Path $profileDir 'device.json'
+    return @{label=$Label;observed_at=[DateTime]::UtcNow.ToString('o');auth_files=$authFacts;local_state=$stateFacts;device_file_sha256=$(if(Test-Path $deviceFile){(Get-FileHash $deviceFile).Hash}else{$null});blocked_file_count=@(Get-ChildItem -LiteralPath $profileDir -Filter 'auth-*.blocked' -File).Count;secret_values_recorded=$false}
+}
+function Crypto-Control {
+    $records=@()
+    foreach($kind in @('hard','graceful')){
+        $directory=Join-Path $EvidenceDir "crypto-$kind"
+        Assert-Live (-not (Test-Path $directory)) 'Fresh crypto control required'
+        [IO.Directory]::CreateDirectory($directory)|Out-Null
+        Write-NewJson @{schema='svi-safe-storage-control-v1';exit_kind=$kind} (Join-Path $directory 'owner.json')
+        $row=@{exit_kind=$kind;scope='standalone real safeStorage control, not product or UI pass'}
+        foreach($phase in @('encrypt','decrypt')){
+            $process=$null
+            try{
+                $info=[Diagnostics.ProcessStartInfo]::new($electron);$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+                $info.Environment.Clear()
+                foreach($key in @('PATH','SYSTEMROOT','WINDIR','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','HOMEDRIVE','HOMEPATH','GITHUB_ACTIONS','RUNNER_TEMP')){if($null -ne [Environment]::GetEnvironmentVariable($key)){$info.Environment[$key]=[Environment]::GetEnvironmentVariable($key)}}
+                foreach($arg in @((Join-Path $repo 'desktop/native/windows/fixtures/credential-control.cjs'),"--user-data-dir=$directory",'--control-dir',$directory,'--control-phase',$phase,'--control-exit',$kind)){$info.ArgumentList.Add($arg)}
+                $process=[Diagnostics.Process]::Start($info)
+                $file=Join-Path $directory "$phase.json";$end=[DateTime]::UtcNow.AddSeconds(8)
+                while(-not (Test-Path $file)){
+                    if($process.HasExited -or [DateTime]::UtcNow -ge $end){throw 'Standalone crypto control did not produce its own metadata'}
+                    Start-Sleep -Milliseconds 20
+                }
+                $row[$phase]=Get-Content -Raw $file|ConvertFrom-Json
+                if($phase -eq 'encrypt' -and $kind -eq 'hard' -and -not $process.HasExited){$process.Kill($true)}
+                Assert-Live ($process.WaitForExit(5000)) 'Standalone crypto process exit not confirmed'
+                $row["${phase}_exit_confirmed"]=$true
+            }catch{$row["${phase}_error"]=$_.Exception.Message}
+            finally{if($null -ne $process -and -not $process.HasExited){$process.Kill($true);$row["${phase}_forced_cleanup_confirmed"]=$process.WaitForExit(2000)}}
+        }
+        $records+=@($row)
+    }
+    Write-NewJson @{scope='two independently owned actual Electron encryption controls; no token/key/cipher contents';observations=$records} (Join-Path $EvidenceDir 'crypto-control.json')
+}
 try {
     Assert-Live (-not (Test-Path $EvidenceDir)) 'New integration directory required'
     $sources=@{}
-    foreach($file in @('server/tests/desktop_live_environment.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1')){
+    foreach($file in @('server/tests/desktop_live_environment.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs')){
         $sources[$file]=(Get-FileHash (Join-Path $repo $file) -Algorithm SHA256).Hash
     }
     Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=10;case_groups=@{register=5;resume=2;admin=3};oracle='one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
@@ -129,24 +185,40 @@ try {
     $private=Get-Content -Raw (Join-Path $EvidenceDir 'credentials.private.json')|ConvertFrom-Json
     Assert-Live (-not $parseable -and -not $text.Contains($private.password) -and $text -notmatch 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+') 'Credentials were persisted as plaintext'
     $data.credential_persistence=@{file_count=$auth.Count;bytes=$cipher.Length;parseable_json=$parseable;plaintext_found=$false;sha256=(Get-FileHash $auth[0].FullName).Hash}
+    $data.profile_lifecycle+=@(Profile-Facts 'after-registration-before-owned-hard-exit')
     Stop-Desktop $desktop;$desktop=$null
+    $data.profile_lifecycle+=@(Profile-Facts 'after-owned-hard-exit-before-background-start')
     $foregroundBefore=[SviLiveWindows]::GetForegroundWindow().ToInt64()
     $launch=Start-Desktop -Background;$desktop=$launch.process
     & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-resume.json') 'boot'
-    Assert-Live ($LASTEXITCODE -eq 0) 'Actual background credential restore UI failed'
-    $data.saved_account_background=@{visible_count=[SviLiveWindows]::Visible($desktop.Id);foreground_unchanged=([SviLiveWindows]::GetForegroundWindow().ToInt64() -eq $foregroundBefore)}
-    Assert-Live ($data.saved_account_background.visible_count -eq 0 -and $data.saved_account_background.foreground_unchanged) 'Saved-account background restore activated a window'
-    $second=Start-Desktop
-    Assert-Live ($second.process.WaitForExit(10000) -and $second.process.ExitCode -eq 0) 'Saved-account second instance did not exit'
-    $end=[DateTime]::UtcNow.AddSeconds(10)
-    while([DateTime]::UtcNow -lt $end -and [SviLiveWindows]::Visible($desktop.Id) -ne 1){Start-Sleep -Milliseconds 100}
-    Assert-Live ([SviLiveWindows]::Visible($desktop.Id) -eq 1) 'Second instance did not show the same restored account window'
-    $data.saved_account_second_instance=@{exit_code=$second.process.ExitCode;original_visible_count=[SviLiveWindows]::Visible($desktop.Id);original_process_alive=(-not $desktop.HasExited)}
-    & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-logout.json') 'logout'
-    Assert-Live ($LASTEXITCODE -eq 0) 'Actual restored-account logout UI failed'
+    $bootExit=$LASTEXITCODE
+    $data.profile_lifecycle+=@(Profile-Facts 'after-background-restore-UI-check')
+    $resumeDb=Snapshot 'database-after-background-restore.json'
+    $data.background_active_logins=$resumeDb.active_logins
+    $resumeFailure=$null
+    try{
+        Assert-Live ($bootExit -eq 0) 'Actual background credential restore UI failed'
+        $data.saved_account_background=@{visible_count=[SviLiveWindows]::Visible($desktop.Id);foreground_unchanged=([SviLiveWindows]::GetForegroundWindow().ToInt64() -eq $foregroundBefore)}
+        Assert-Live ($data.saved_account_background.visible_count -eq 0 -and $data.saved_account_background.foreground_unchanged) 'Saved-account background restore activated a window'
+        $second=Start-Desktop
+        Assert-Live ($second.process.WaitForExit(10000) -and $second.process.ExitCode -eq 0) 'Saved-account second instance did not exit'
+        $end=[DateTime]::UtcNow.AddSeconds(10)
+        while([DateTime]::UtcNow -lt $end -and [SviLiveWindows]::Visible($desktop.Id) -ne 1){Start-Sleep -Milliseconds 100}
+        Assert-Live ([SviLiveWindows]::Visible($desktop.Id) -eq 1) 'Second instance did not show the same restored account window'
+        $data.saved_account_second_instance=@{exit_code=$second.process.ExitCode;original_visible_count=[SviLiveWindows]::Visible($desktop.Id);original_process_alive=(-not $desktop.HasExited)}
+        & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-logout.json') 'logout'
+        Assert-Live ($LASTEXITCODE -eq 0) 'Actual restored-account logout UI failed'
+    }catch{
+        $resumeFailure=$_.Exception.Message;$data.resume_failure=$resumeFailure
+        if(-not (Test-Path (Join-Path $EvidenceDir 'desktop-logout.json'))){Write-NewJson @{phase='logout';planned=1;cases=@(@{id='LIVE-DESKTOP-07';status='blocked';reason='Saved-account restore/second-instance precondition failed; logout UI was not executed'})} (Join-Path $EvidenceDir 'desktop-logout.json')}
+    }
     Stop-Desktop $desktop;$desktop=$null
-    $loggedOut=Snapshot 'database-after-desktop-logout.json'
-    Assert-Live ($loggedOut.active_logins -eq 0 -and $loggedOut.sessions -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'Logout left server session or local credentials'
+    if($null -ne $resumeFailure -and $bootExit -ne 0){try{Crypto-Control}catch{$data.crypto_control_error=$_.Exception.Message}}
+    $loggedOut=Snapshot $(if($null -eq $resumeFailure){'database-after-desktop-logout.json'}else{'database-after-failed-desktop-restore.json'})
+    if($null -eq $resumeFailure){Assert-Live ($loggedOut.active_logins -eq 0 -and $loggedOut.sessions -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'Logout left server session or local credentials'}
+    # Admin remains independently testable. Residual desktop logins are retained
+    # until final cleanup, never counted as a successful product logout.
+    $expectedFinalActive=$loggedOut.active_logins
     $port=Free-Port;$chromeProfile=Join-Path $EvidenceDir 'admin-browser-profile'
     $browserInfo=[Diagnostics.ProcessStartInfo]::new($env:SVI_PROBE_CHROME);$browserInfo.UseShellExecute=$false
     foreach($arg in @("--user-data-dir=$chromeProfile",'--headless=new','--no-first-run','--disable-sync',"--remote-debugging-port=$port",'--remote-debugging-address=127.0.0.1','http://127.0.0.1:17863/admin/')){$browserInfo.ArgumentList.Add($arg)}
@@ -154,7 +226,8 @@ try {
     & node $ui $port $environment (Join-Path $EvidenceDir 'admin-ui.json') 'admin'
     Assert-Live ($LASTEXITCODE -eq 0) 'Admin same-database real UI cases failed'
     $final=Snapshot 'database-final.json'
-    Assert-Live ($final.users.Count -eq 2 -and $final.active_logins -eq 0 -and $final.sessions -eq 0 -and @($final.users|Where-Object{-not $_.learning_enabled}).Count -eq 0) 'Final real database differs from the independent oracle'
+    Assert-Live ($final.users.Count -eq 2 -and $final.active_logins -eq $expectedFinalActive -and $final.sessions -eq 0 -and @($final.users|Where-Object{-not $_.learning_enabled}).Count -eq 0) 'Final real database differs from the independent oracle'
+    if($null -ne $resumeFailure){throw "$resumeFailure; independent Admin UI completed, saved-account gate remains failed"}
     $data.status='pass'
 } catch {$data.status='fail';$data.error=$_.Exception.Message;throw}
 finally {
@@ -171,6 +244,6 @@ finally {
         if(-not $data.login_cleanup_confirmed){$data.status='fail'}
     }
     if(Test-Path $environment){& $PythonExe $fixture stop-pg --environment $environment;$data.postgres_cleanup_confirmed=($LASTEXITCODE -eq 0);if(-not $data.postgres_cleanup_confirmed){$data.status='fail'}}
-    if(Test-Path $EvidenceDir){Write-NewJson $data (Join-Path $EvidenceDir 'summary.json')}
+    if(Test-Path $EvidenceDir){Write-NewJson @{scope='metadata only, no ciphertext/key/credential contents';observations=$data.profile_lifecycle} (Join-Path $EvidenceDir 'profile-lifecycle.json');Write-NewJson $data (Join-Path $EvidenceDir 'summary.json')}
     if($data.status -ne 'pass'){throw 'Actual client/service integration failed; all acquired evidence retained'}
 }

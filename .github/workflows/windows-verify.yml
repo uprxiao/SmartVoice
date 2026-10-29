@@ -213,6 +213,8 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/api-owner.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/runtime-owner.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/helper-identity.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/profile-lifecycle.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/crypto-control.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-register.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
