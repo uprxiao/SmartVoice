@@ -55,7 +55,7 @@
 | TC-WIN-24 / WIN-07 | L1+L3；隐藏时录音/处理，快捷键停止、结果插入；托盘退出时存在录音/待返回 helper | 不激活主窗/HUD不抢焦点；隐藏录音与可见组音频一致；退出停止音轨/WS/快捷键/helper，不迟到输入，不用关闭按钮假装已退出 |
 | TC-WIN-25 / WIN-08 | L1+L3；全新安装默认、自启开/关、连续点击、真实 API 失败/读回不符/回滚失败；启动项同路径但缺少或错误后台参数另组 | 默认 off；保存中禁重复；固定 AppUserModelID/name/user/path 与完整命令行（含 --background）读回，另核系统 enabled，不能乐观报成功；launchItems.args 省略 switch 不能作为不核参数的依据。失败原值恢复并复核，不确定状态明示。开发壳不可配置，Mac无新增设置 |
 | TC-WIN-26 / WIN-08 | L1+L3；系统启动应用禁用自己的注册项、返回应用；系统重新启用 | 区分 registered 与 enabled/systemDisabled；保留应用偏好且提供 startupapps 入口；不能因 Run 项存在造生效，不能写其他应用设置 |
-| TC-WIN-27 / WIN-07～08 | L1+L3；实际登录 Windows 启动（--background）、保存/未保存账号、再次手动启动 | 首次后台不弹主窗，托盘可用；不自动录音/新登录；手动再启动显示现有主窗；退出清理。实际系统登录参数不能只以手工 argv 代替全部通过 |
+| TC-WIN-27 / WIN-07～08 | L1+L3；实际登录 Windows 启动（--background）、保存/未保存账号、再次手动启动；独立组使用全新profile，首次注册成功后立即强退再后台恢复 | 首次后台不弹主窗，托盘可用；不自动录音/新登录；首次密文必须在立即强退后仍能恢复，不能以增加强退前等待换取通过；手动再启动显示现有主窗；退出清理。实际系统登录参数不能只以手工 argv 代替全部通过 |
 | TC-WIN-28 / WIN-08、11 | L3；隔离机器开启自启后卸载再登录、重装；保留另一个假启动项作对照 | 只清本应用 Run/StartupApproved 项，无残留启动；其他项与用户账号文件不删，重装默认 off；记录安装器与卸载器摘要 |
 | TC-WIN-29 / WIN-09 | L1+L3；Shift+Space、Control/Ctrl+Space 等价写法、Escape及旧系统键；注册/保存失败、完整重启 | 保留组合明确拒绝；失败保留原键并读回，成功重启一致。不能仅保存字符串无原生注册。中文/英文报错一致 |
 | TC-WIN-30 / WIN-09 | **L3**；真实中文/英文 IME；候选 Ctrl+Shift+Space 与 Ctrl+Alt+Space 分别测试录音开/停、输入法切换/候选菜单 | 无意外 IME/系统动作且录音开停一次，记录两候选各组。按 Q2 选择默认；两个不通过保留冲突未解决，注册成功不替代真实输入法 |
@@ -66,7 +66,7 @@
 |---|---|---|
 | TC-WIN-31 / WIN-10 | L1+L2/L3；100/150/200%、负坐标、多屏输入在屏 A 鼠标在 B；经典caret/UIA range/element/window/mouse 逐层降级 | physical→DIP 一次转换，HUD 在输入所在屏 workArea；有输入位置不优先鼠标，逐层依据可追踪；缺屏/缩放参数 not_run，不以单屏替代 |
 | TC-WIN-32 / WIN-10 | L1+L2/L3；显示/移动/隐藏15次采前台PID/焦点；定位迟到、取消、开启下一次录音 | HUD showInactive/非激活，不改变当前目标；停止/取消后迟到 bounds 不复活，新代际不混入旧坐标 |
-| TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录 |
+| TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件；首次凭据子进程异常退出/超时/应答缺失或其他profile参数 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录。初始化子进程须正常退出且目录身份相符才允许持久化；异常仅内存登录，无明文fallback/递归启动/额外主窗；Mac不走此流程 |
 | TC-WIN-34 / WIN-01、11 | L1+真 PostgreSQL HTTP；同结果重复 claim/receipt、inserted/failed/unverified、跨账号访问；源码冻结 | API/数据库读回状态和 effect 一致；tenant 拒绝；重复不重复统计/执行，unknown 不计 inserted；不新增 Windows 服务端枚举/表 |
 | TC-WIN-35 / WIN-06、11 | Admin 构建/类型+Mock错误/空态→接 TC-WIN-34 同服务数据库 | 后台实际状态/计数等于手算与数据库；普通用户无管理员访问；不把 failed/unverified 美化为成功，HTTP失败不显示假数据 |
 | TC-WIN-36 / WIN-05、11 | **L3**；正式安装包→HTTPS/WSS登录→真实麦克风/ASR/LLM→Notepad及Chrome输入；真实取消/网络失败 | 完整音频/模型/整理/插入读回与历史回执闭环；CA链/IP/有效期校验保留、safeStorage token 不暴露；遵守既有质量/性能/隐私，不以 Mock 或探针结果替代 |

@@ -107,6 +107,16 @@ Windows 麦克风使用 `getMediaAccessStatus('microphone')`；granted 才通过
 
 Windows `correctionObservationSupported=false`；Main 每会话传 `learning_enabled=false` 并不启动 CorrectionObserver。插入的 observable=true 仍表示读回成功，不能为了关观察而把已确认输入改为未核验。账号 `learning_enabled`、其他设备与 Mac 路径不变；Windows 首页/设置显示本版暂不支持自动纠正学习，已有历史计数与词库不清零。
 
+## Windows 首次凭据持久化
+
+首次加密成功只证明取得密文，不能证明加密配置已持久化。独立对照确认同步/异步 safeStorage 及公开 DOMStorage flush 后立即强退均无法恢复，独立正常退出预热后同组可恢复；产品强退恢复仍须另验。
+
+Windows 持有单实例锁的 Main 在初始脚本中同步启动本应用的固定内部初始化模式，必须早于 `app.ready`。子进程使用相同 userData/sessionData，仅在 ready 后调用公开 safeStorage 加密固定非账号 canary，再正常退出，让 Electron 提交自己的配置。父 Main 等待真实退出0，并核对唯一应答的 schema 和两目录身份摘要后，才继续初始化 TokenStore。父 Main 保持原 PID 与单实例锁；内部子进程不申请锁，不创建窗口/托盘/RPC/native helper，不加载账号、不发 HTTP，也不继承调试端口或模型/服务凭据。开发壳显式传入应用目录；安装版直接使用本应用 exe，所有参数均为数组，不经过 shell。
+
+子进程隐藏启动、输出上限8KiB、准备期限8000ms；失败、超时、被终止、应答缺失/重复或目录不符均使用既有“仅本次内存登录”分支，不将当前密文冒称可恢复，不采用明文或新密钥 provider。Mac 不执行此初始化，也不触碰其 Keychain。实现集中 [Windows 存储初始化](../../desktop/native/windows/credential-bootstrap.ts)，不读写 Chromium 私有密钥格式，不通过延迟强退测试来放宽判据。
+
+时序依据为锁定 [Electron 主脚本加载后才初始化全局配置](https://github.com/electron/electron/blob/v42.11.15/shell/browser/electron_browser_main_parts.cc#L290-L311)和[正常退出提交配置](https://github.com/electron/electron/blob/v42.11.15/shell/browser/browser_process_impl.cc#L182-L187)。必须保留初始脚本中的同步等待；移入 ready 回调会让父进程先取得未持久化的不同密钥。实际首次注册后立即强退、后台恢复、第二实例、包启动和全部失败分支按 TC-WIN-27/33 回归；候选实验不替代正式产品通过。
+
 ## 托盘、单实例与自启
 
 Main 保持强引用 Tray，使用自有图标，菜单“打开/退出”。首次关闭提示沿用 S0 文案，使用主窗口所属的原生信息对话框，用户确认后隐藏；确认状态保存在本机小型配置，重复关闭不重复提示。对话框等待期间防重复关闭，不阻塞音频渲染线程。关闭事件 preventDefault 后隐藏窗口，保留 Renderer/AudioWorklet、`backgroundThrottling:false`；明确退出先设置 quitting，再取消会话、invalidate native、释放快捷键/托盘，允许窗口退出。托盘创建失败不得留下无入口的隐藏进程，应保留可见窗口及退出入口并说明原因。

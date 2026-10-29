@@ -41,6 +41,7 @@ import { NativeVoiceInput } from './core/native-input';
 import { SessionService } from './core/session-service';
 import { ShortcutService } from './core/shortcut-service';
 import { TokenStore } from './core/token-store';
+import { completeCredentialBootstrap, credentialCipher, isCredentialBootstrap, prepareCredentialStorage } from '../../native/windows/credential-bootstrap';
 import { InsertionJournal } from './core/insertion-journal';
 import { createRpcRouter } from './rpc';
 import { createRendererRpcAuthorizer } from './rpc-authorization';
@@ -49,10 +50,13 @@ app.setName('SmartVoiceInput');
 configureWindowsAppIdentity();
 if (process.env.SVI_USER_DATA) app.setPath('userData', process.env.SVI_USER_DATA);
 
-const gotLock = app.requestSingleInstanceLock();
+const credentialBootstrap = isCredentialBootstrap();
+const gotLock = !credentialBootstrap && app.requestSingleInstanceLock();
 let showRequested = false;
 let showMain: (() => Promise<void>) | null = null;
-if (!gotLock) {
+if (credentialBootstrap) {
+  void completeCredentialBootstrap();
+} else if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -60,6 +64,10 @@ if (!gotLock) {
     void showMain?.();
   });
 }
+
+// This must run in the initial script, before Electron initializes Local State.
+// Only the owner warms the profile; the internal child never requests its lock.
+const credentialStorageReady = !gotLock || prepareCredentialStorage();
 
 const events = createEventEmitter({
   emit: (channel, data) => {
@@ -89,7 +97,7 @@ async function main(): Promise<void> {
 
   const serverIdentity = new URL(API_BASE_URL).href;
   const serverKey = createHash('sha256').update(serverIdentity).digest('hex');
-  const tokens = new TokenStore(undefined, app.getPath('userData'), serverIdentity);
+  const tokens = new TokenStore(credentialCipher(credentialStorageReady), app.getPath('userData'), serverIdentity);
   const device = tokens.device(app.getVersion());
   debug('tokens');
   let api!: ApiClient;
