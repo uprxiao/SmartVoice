@@ -206,6 +206,8 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/prepared.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/setup-failure.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/setup-acl.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/api-owner.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/runtime-owner.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-register.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json

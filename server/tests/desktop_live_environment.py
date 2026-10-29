@@ -39,6 +39,19 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def runtime_identity():
+    binary = Path(sys.executable).resolve()
+    if os.name == "nt":
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = ctypes.windll.kernel32.GetModuleFileNameW(None, buffer, len(buffer))
+        if length == 0 or length >= len(buffer):
+            raise RuntimeError("Actual Python image unavailable")
+        binary = Path(buffer.value)
+    return {"pid": os.getpid(), "parent_pid": os.getppid(),
+            "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
+
+
 def environment(path):
     path = Path(path).resolve()
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -156,12 +169,14 @@ def prepare(run_dir, pg_bin, port):
     write_new(run_dir / "prepared.json", {"status": "prepared", "database_prefix_verified": True,
               "origin": value["origin"], "expected_users_before_ui": 1, "expected_sessions_before_ui": 0,
               "providers": {"asr": "mock", "llm": "mock"},
+              "python_binary_sha256": runtime_identity()["binary_sha256"],
               "postgres_version": subprocess.check_output([executable("pg_config"), "--version"], text=True).strip(),
               "tzif_sha256": hashlib.sha256((tzpath / "Asia/Shanghai").read_bytes()).hexdigest() if tzpath else None})
 
 
 def serve(path):
     value = environment(path)
+    write_new(Path(value["run_dir"]) / "runtime-owner.json", runtime_identity())
     env = child_env(value)
     os.environ.clear()
     os.environ.update(env)

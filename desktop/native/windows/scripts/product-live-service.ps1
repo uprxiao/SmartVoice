@@ -94,7 +94,17 @@ try {
     }
     Assert-Live $ready 'Owned API readiness deadline exceeded'
     $listeners=@(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 17863 -State Listen)
-    Assert-Live ($listeners.Count -eq 1 -and $listeners[0].OwningProcess -eq $server.Id) 'Loopback API listener does not belong to the owned fixture process'
+    $runtime=Get-Content -Raw (Join-Path $EvidenceDir 'runtime-owner.json')|ConvertFrom-Json
+    $prepared=Get-Content -Raw (Join-Path $EvidenceDir 'prepared.json')|ConvertFrom-Json
+    $runtimeProcess=Get-Process -Id $runtime.pid -ErrorAction Stop
+    $runtimeFacts=Get-CimInstance Win32_Process -Filter "ProcessId = $($runtime.pid)"
+    $direct=($runtime.pid -eq $server.Id)
+    $child=($runtime.parent_pid -eq $server.Id -and $runtimeFacts.ParentProcessId -eq $server.Id)
+    $owner=@{listener_count=$listeners.Count;launcher_pid=$server.Id;runtime_pid=$runtime.pid;direct_launcher=$direct;direct_owned_child=$child;runtime_not_older=($runtimeProcess.StartTime -ge $server.StartTime);binary_hash_matches=($runtime.binary_sha256 -eq $prepared.python_binary_sha256 -and (Get-FileHash -LiteralPath $runtimeFacts.ExecutablePath).Hash -eq $prepared.python_binary_sha256);listener_matches_runtime=($listeners.Count -eq 1 -and $listeners[0].OwningProcess -eq $runtime.pid);launcher_alive=(-not $server.HasExited)}
+    Write-NewJson $owner (Join-Path $EvidenceDir 'api-owner.json')
+    # Windows venv python.exe may be a redirector. Accept only this exact owned
+    # process or its direct, independently identified Python runtime child.
+    Assert-Live (($owner.direct_launcher -or $owner.direct_owned_child) -and $owner.runtime_not_older -and $owner.binary_hash_matches -and $owner.listener_matches_runtime -and $owner.launcher_alive) 'Loopback API listener does not belong to the owned Python runtime'
     $data.api_listener_owned=$true
     $native=Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'
     $devHelper=Join-Path $repo 'desktop/resources/voice/smartvoiceinput-input.exe'
