@@ -17,8 +17,11 @@ export function autoStartInfo(): AutoStartInfo {
   const empty = { supported, configurable, registered: false, enabled: false, systemDisabled: false, error: false };
   if (!configurable) return empty;
   try {
-    const info = app.getLoginItemSettings({ path: process.execPath, args: ARGS });
-    const items = info.launchItems.filter(item => item.name === ENTRY
+    // Electron 42 parses this lookup path as a command line. An unquoted path
+    // containing spaces is truncated before launchItems are enumerated. This
+    // is an API argument, not a shell command; the setter accepts the raw path.
+    const info = app.getLoginItemSettings({ path: `"${process.execPath}"`, args: ARGS });
+    const items = info.launchItems.filter(item => item.name === ENTRY && item.scope === 'user'
       && win32.normalize(item.path).toLowerCase() === win32.normalize(process.execPath).toLowerCase()
       && JSON.stringify(item.args) === JSON.stringify(ARGS));
     const registered = info.openAtLogin || items.length > 0;
