@@ -238,8 +238,17 @@ try {
         & $PythonExe $fixture revoke --environment $environment --cleanup-phase history-preparation
         Assert-Live ($LASTEXITCODE -eq 0) 'Independent history preparation cleanup failed'
         $historyFixture=Join-Path $repo 'server/tests/desktop_history_fixture.py'
-        $seedText=& $PythonExe $historyFixture seed --environment $environment
-        Assert-Live ($LASTEXITCODE -eq 0) 'Explicit synthetic history preparation failed'
+        $seedErrorFile=Join-Path $EvidenceDir 'history-seed-stderr.private.log'
+        $seedText=& $PythonExe $historyFixture seed --environment $environment 2> $seedErrorFile
+        $seedExit=$LASTEXITCODE
+        if($seedExit -ne 0){
+            $tail=[string]$(if(Test-Path $seedErrorFile){Get-Content -Raw $seedErrorFile}else{''})
+            foreach($secret in @($private.password,$repo,$EvidenceDir,$env:USERPROFILE)){if(-not [string]::IsNullOrEmpty($secret)){$tail=$tail.Replace($secret,'[redacted]')}}
+            $tail=$tail -replace 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]'
+            if($tail.Length -gt 9000){$tail=$tail.Substring($tail.Length-9000)}
+            Write-NewJson @{exit_code=$seedExit;seed_file_present=(Test-Path (Join-Path $EvidenceDir 'history-seed.json'));sanitized_stderr_tail=$tail} (Join-Path $EvidenceDir 'history-seed-failure.json')
+        }
+        Assert-Live ($seedExit -eq 0) 'Explicit synthetic history preparation failed'
         $seed=$seedText|ConvertFrom-Json
         Assert-Live ($seed.review_flag_prepared_by_fixture -and $seed.baseline.results.Count -eq 1 -and $seed.baseline.insertions.Count -eq 0) 'History preparation oracle differs'
         $targetFile=Join-Path $EvidenceDir 'history-notepad.txt'

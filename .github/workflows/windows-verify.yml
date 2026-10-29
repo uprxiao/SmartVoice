@@ -220,6 +220,7 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-ui.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed-failure.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-targets.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-preparation-cleanup.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-history.json

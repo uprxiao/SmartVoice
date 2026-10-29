@@ -10,6 +10,7 @@ import asyncio
 import json
 from pathlib import Path
 import struct
+import sys
 import uuid
 
 from desktop_live_environment import environment, write_new
@@ -108,6 +109,7 @@ async def seed(path):
     if row["state"] != "ready" or row["learning_enabled"] or row["received_samples"] != 16000:
         raise RuntimeError("Synthetic audio/session metadata differs")
     record = {"scope": "synthetic zero PCM + mock providers; explicit review flag fixture, no microphone/quality/S5 pass",
+        "cli_stdout_encoding": sys.stdout.encoding, "cli_json_ascii_escaped": True,
         "session_id": sid, "result_id": result["result_id"], "review_flag_prepared_by_fixture": True,
         "raw_text": RAW, "refined_text": REFINED, "expected_native_text": "BEGIN " + REFINED + " END",
         "expected_caret_utf16": 22, "expected_selection_utf16_len": 0,
@@ -122,4 +124,4 @@ if __name__ == "__main__":
     parser.add_argument("--environment", required=True, type=Path)
     args = parser.parse_args()
     print(json.dumps(asyncio.run(seed(args.environment) if args.command == "seed" else snapshot(args.environment)),
-                     ensure_ascii=False, default=str))
+                     ensure_ascii=True, default=str))  # Portable JSON pipe; decoded fixture text stays exact.
