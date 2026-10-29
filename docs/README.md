@@ -9,7 +9,7 @@
 | V1（口述、整理、插入、词库与修改学习、历史统计、管理后台） | 已完成开发与验收 |
 | V2（云端 ASR provider、后台模型服务管理） | 已完成开发与验收 |
 | 辅助功能未授权提示（TC-INSERT-22） | 已完成，随 v0.0.1 发布 |
-| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围决策](02-prd/windows-version-decision-20261029.md)已确认；**9 项开发前阻断技术验证通过，S0/S1/S2/S3 已补齐复核，S4 主体实现已落盘并同步开发分支**。见 [S0 原型](01-prototype/windows-v002.md)与 [WIN-01～12](02-prd/windows-v002-requirements.md)。三端自动回归与 Windows 开发安装包构建/启动验证通过；剩余联调、真实物理按键、输入法、多屏等验收仍须执行 |
+| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围决策](02-prd/windows-version-decision-20261029.md)已确认；**S0/S1/S2/S3 已补齐复核，S4 主体实现及本轮自动门禁通过，已同步开发分支**。见 [S0 原型](01-prototype/windows-v002.md)与 [WIN-01～12](02-prd/windows-v002-requirements.md)。三端回归、Windows 56项原生参数/15组实际界面联调和开发安装包验证通过；真实音频/模型、物理按键、输入法、多屏及系统登录等参数仍须执行，不宣称40条或S5全部通过 |
 | 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划顺延到 v0.0.3（v0.0.2 先做 Windows 版） |
 
 已知限制：Mac 预览包未经 Apple 签名与公证；Windows 安装包未签名，完整业务验收未完成；长期稳定性待上线后跟踪。
@@ -23,20 +23,17 @@
 | S1 正式需求修订 | 已整理并复核 | [WIN-01～12](02-prd/windows-v002-requirements.md)与 PRD/BR-07/11 对齐；需求用户评审依据为本人已确认的范围与 Q1–Q7，本次不追加 Windows 修改观察 |
 | S2 Windows 技术设计 | 已整理并复核 | [技术设计](03-architecture/windows-v002-design.md)对齐实际扁平 JSONL、一次执行、平台能力、生命周期、坐标与三端责任；S0 首次关闭确认时序同步复核 |
 | S3 Windows 测试用例 | 已生成并复核 | [40 条专项用例](04-test/test-cases-windows-v002.md)覆盖 12/12 WIN，数据、独立参数与 L1/L2/L3 判据完整；物理键盘/安装包/真实闭环要求保留 |
-| S4 正式开发 | 主体已实现，分层验证中 | 正式 helper、平台 UI/麦克风/RPC、托盘/单实例/后台自启、坐标与打包已实现；源码 `48628d1` 的[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40881145082)通过，含 Desktop Mac/Windows 各694项、Rust13项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项专项另已通过。`8bc42f6` 的[Windows 开发包验证](https://github.com/uprxiao/SmartVoice/actions/runs/40883701708)通过：正式原生17/17参数、9/9技术阻断、NSIS x64、普通完整性进程后台隐藏/不抢焦点、真实RPC自启off/on/off读回、第二实例和helper清理。Mac arm64开发包构建通过。失败与未执行参数全部保留，不以部分参数冒称40条或S5全通过。见 [专项用例](04-test/test-cases-windows-v002.md)与 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
+| S4 正式开发 | 主体实现及本轮自动门禁通过 | 正式 helper、平台权限 UI、托盘/单实例/后台自启、坐标、打包及首次凭据持久化已实现。[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40967667984)通过：Desktop Mac/Windows 各716项、Rust15项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项及 Admin 浏览器9组另已通过。[本轮 Windows 完整验证](https://github.com/uprxiao/SmartVoice/actions/runs/40967683045)通过：56/56正式原生参数、9/9技术阻断、15/15实际界面组、NSIS两轮安装/卸载/重装、后台恢复与真实 Main/preload RPC。其余物理/真实业务参数保留，未放行完整 S5。见下方证据及[三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
 | S5 真机验收 | 未开始 | Windows x64 自测；V-04 物理按键及 V-05/06/11/12/13/15 和目标安装包均须留证 |
 
-S4 接续复核：`f4a4520` 后续 CI 中 Admin 测试夹具在源码编译阶段触发 250ms VM 超时，其他任务通过。`87fd620` 将编译准备移到受限调用之前，保留原限制与93项分母，[完整 CI 复验通过](https://github.com/uprxiao/SmartVoice/actions/runs/40900959347)。Admin 又完成9组真实浏览器/隔离 PostgreSQL/HTTP/WS 联调，三种回执与重复请求的计数、筛选、错误恢复及登录退出均核对通过；见[复跑说明](../admin/tests/browser-live-README.md)。模型与 PCM 明确为虚构夹具，剩余 Windows 参数与 S5 真机要求保留。
+当前验证依据（分母分别登记，不合并为40条全部通过）：
 
-Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参数运行](https://github.com/uprxiao/SmartVoice/actions/runs/40908758987)为21通过、2个 Chrome 空框失败，另有夹具清理未确认；原失败保留，未放宽全文/光标或清理判据。后续[30 参数诊断](https://github.com/uprxiao/SmartVoice/actions/runs/40910927523)为27通过、Chrome空框2组及DIB 1组失败，9/9技术阻断与清理通过。HTML/RTF/文件列表等各格式保真和不安全格式拒绝已有实测；空框标签名归一化修复仍要求独立 ValuePattern为空、无嵌入子项、零光标/选区，DIB关联格式继续处理；正在展开异常读回、协议字节与跨进程版本回归。
+- 正式 helper：[56参数实测及整轮验证](https://github.com/uprxiao/SmartVoice/actions/runs/40967683045)全部通过，覆盖严格全文/UTF-16光标、空框、DIB关联位图、父进程死亡、迟到 UIA 读回、跨进程复制与显式目标恢复；同 PID/owner 链不同根窗口拒绝。L2、开发资源和 NSIS 的静态 CRT helper 摘要一致；9项技术阻断均通过，Chrome 首次空读后恢复已有实际轨迹。
+- 首次凭据：[五组对照](https://github.com/uprxiao/SmartVoice/actions/runs/40959839233)后修复初始化时序，父进程独立解密 canary 才允许持久化。[实际客户端复验](https://github.com/uprxiao/SmartVoice/actions/runs/40961476396)已通过首次注册后立即强退、后台恢复、第二实例和退出清理，原10组 Desktop/Admin UI 全部通过；系统真实重新登录另验。
+- 三端联调：真实 PostgreSQL/API 21项和 Admin 浏览器9组通过，含三种回执、重复请求、租户、统计、403及错误恢复，见[复跑说明](../admin/tests/browser-live-README.md)。Windows [15组实际界面联调](https://github.com/uprxiao/SmartVoice/actions/runs/40967683045)全部通过：历史重新整理、显式选择 Notepad 目标、恢复选区插入、重复点击不重写、退出，以及同库 Admin 1会话/1插入/14字/0学习。独立全文/光标、剪贴板、SQL回执与清理均核对。PCM 与模型均为虚构夹具，不代替真实录音或质量验收。
+- 安装与产物：两轮实际 NSIS 安装/卸载/重装已核对仅清自有启动项、保留其他虚构项和用户文件、重装默认 off。[生产源码三架构构建及完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40961484374)全部通过，Mac arm64/x64 和 Windows x64 的下载摘要、大小、版本与来源均独立核对。Mac 另核结构、架构、CA、ad-hoc 签名和实际 Electron 42.11.15；本地 x64 经 Rosetta，不能替代物理 Intel 设备。最新 Windows 开发安装器另由上述完整门禁保留，本地静态解包已核主程序/helper的AMD64架构、ASAR版本/固定服务/CA；四个关键资源摘要与两轮实际安装一致。实际 Windows 安装行为由 Windows 环境验证，静态解包不替代。尚未创建 Release。
 
-`cc93f22` 的[41 参数回归](https://github.com/uprxiao/SmartVoice/actions/runs/40924485576)为39通过、2失败：Chrome两种空框已精确通过；四种异常读回、非法字节/EOF/超大行、生产修饰键中和、跨进程新复制与三排除 DWORD 均通过。剩余 DIB 和父进程退出分别修复中；后者改用进程对象存活状态结合原始创建时间，并在实际粘贴前核父身份。所有修复仍须 Windows 独立回归，不提前记通过。
-
-`bae832e` 的[44 参数与开发包回归](https://github.com/uprxiao/SmartVoice/actions/runs/40932020502)全部通过：44/44正式原生参数、9/9技术阻断、15项Rust策略、NSIS与真实Main/preload后台/自启/第二实例/清理。DIB关联位图保真、真实位图源/冲突反例拒绝、保留旧进程句柄时父退出清理与粘贴前零写入均已实测。继续补实际安装/卸载/重装与其他参数，不把此分母视作40条专项或S5完成。
-
-`5356e4e` 的[两轮实际安装/卸载/重装](https://github.com/uprxiao/SmartVoice/actions/runs/40933749977)通过：含空格/中文路径的安装资源摘要、真实Main自启、卸载仅清自有Run/StartupApproved、其他虚构启动项及用户文件保留、重装默认off均核对。后续[54 参数矩阵](https://github.com/uprxiao/SmartVoice/actions/runs/40935021016)为53通过、1个有效历史目标恢复失败；最新位置/A-B-C、历史变更拒绝、慢UIA时跨进程复制、CRLF/LF原始读回均通过。恢复组正在做Win32激活与UIA SetFocus独立对照；托管机真实麦克风状态为denied，标准合成设备下的真实API状态另验，不绕过Main权限门禁或记为真实音频通过。
-
-最新接续：正式 helper 已修复迟到读回与显式目标根身份校验。[静态 CRT 的56参数实测](https://github.com/uprxiao/SmartVoice/actions/runs/40953466542)全部通过，含同进程/同拥有者链的不同根窗口零写入反例；L2、开发资源、NSIS资源三处 helper 摘要一致。真实客户端/PG/API 已通过注册、权限加载与拒绝录音5组，但强制退出后的保存账号恢复尚失败，剩余流程继续定位，S4未宣称完整通过。[三原生架构安装包构建](https://github.com/uprxiao/SmartVoice/actions/runs/40947639892)及其完整CI通过，另有[最新生产代码完整CI](https://github.com/uprxiao/SmartVoice/actions/runs/40949867432)通过；该构建的Windows包早于焦点修复，仅留作构建证据，不能替代最终验收包。Mac两架构包已本地核对结构/架构/CA和实际Electron版本，x64本地运行经Rosetta；均不替代S5真机。
+失败与修复保持可追溯：[Chrome空框/DIB初始失败](https://github.com/uprxiao/SmartVoice/actions/runs/40910927523)、[父退出等边界](https://github.com/uprxiao/SmartVoice/actions/runs/40924485576)、[显式恢复失败](https://github.com/uprxiao/SmartVoice/actions/runs/40935021016)均保留原分母，修复后再独立回归；Admin 250ms 夹具超时移除编译准备影响后，原限制和93项分母不变，[复验通过](https://github.com/uprxiao/SmartVoice/actions/runs/40900959347)。[上一轮失败](https://github.com/uprxiao/SmartVoice/actions/runs/40964235724)的 Chrome 准备和历史按钮点击另保留证据：现以只读 DOM 确认 Chrome 就绪，历史按钮等真实命中后点击，且核对精确 Main 窗口；没有改 UIA、插入预算或判定标准。本轮复验通过仍不覆盖真实麦克风、模型、物理按键、IME、多屏和系统登录等 S5 参数。
 
 ## 文档
 
@@ -49,8 +46,6 @@ Windows 参数继续展开：新增 Notepad/Chrome 光标与空框后，[23 参�
 | [05-branding](05-branding/) | Logo 设计过程 |
 
 ## 待决问题
-
-- Windows 首次安全存储的强退一致性仍待产品复验：[五组独立对照](https://github.com/uprxiao/SmartVoice/actions/runs/40959839233)确认公开 DOMStorage flush 与异步 API 均不能解决首次立即强退；独立正常退出预热后可恢复。已按[S2初始化时序](03-architecture/windows-v002-design.md#windows-首次凭据持久化)补主进程早期初始化和失败时仅内存登录，不读写私有密钥格式。源码类型、构建与716项Desktop回归通过（含父进程独立解密确认）；实际客户端的立即强退/后台恢复/第二实例尚待原判据复验，门禁未放行。独立Admin和历史输入不替代原恢复/注销。
 
 - Windows WIN-12：已提出是否追加旧版修改学习的澄清，当前按本人原先确认的“observe 后移”范围继续，不追加 Windows 修改观察，不把未回复当成新的批准。若本人选择扩围，先回到 S1/S2/S3 补齐再实现；`release` 则按实码保留为既有目标生命周期清理。见 [S1 补充](02-prd/windows-v002-requirements.md)。
 
