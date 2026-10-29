@@ -30,6 +30,20 @@ function Start-Owned([string]$Program, [string[]]$Arguments) {
     $script:Owned.Add($process)
     return $process
 }
+function Wait-OwnedWindow([System.Diagnostics.Process]$Process) {
+    # Fixture preparation is separate from helper/paste verification budgets.
+    # A cold Chrome launch may not have a window when probeFocus is first sent.
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($watch.ElapsedMilliseconds -lt 20000) {
+        $Process.Refresh()
+        if ($Process.HasExited) { throw "BLOCKED: owned fixture exited before a window was ready (pid=$($Process.Id), exit=$($Process.ExitCode))" }
+        if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
+            return @{pid=$Process.Id;window_ready=$true;preparation_ms=$watch.ElapsedMilliseconds}
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "BLOCKED: owned fixture window was not ready within 20000ms (pid=$($Process.Id)); no paste attempted"
+}
 function Stop-Owned {
     foreach ($process in $script:Owned) {
         try {
@@ -244,12 +258,13 @@ try {
             $page = [System.Uri]::new((Join-Path $NativeRoot 'fixtures/chrome.html')).AbsoluteUri + '?kind=' + $kind
             $profile = Join-Path $OutputDir "chrome-$kind"
             $chrome = Start-Owned $ChromeExe @("--user-data-dir=$profile", '--no-first-run', '--no-default-browser-check', '--disable-sync', "--app=$page")
+            $preparation = Wait-OwnedWindow $chrome
             $insert = if ($kind -eq 'input') { '中文🙂 Docker' } else { "中文🙂`nDocker" }
             $expected = "BEGIN $insert END"
             $observation = Paste-Selection $chrome.Id $insert 'BEGIN React END' 5 $expected
             $caret = Paste-Selection $chrome.Id 'TypeScript' $expected 0 "BEGIN TypeScript$insert END"
             $script:ChromeObservations += @{kind=$kind;observation=$observation;caret=$caret;target_id=$chrome.Id}
-            $parameters += @{kind=$kind;status='pass';selection=$observation;caret=$caret}
+            $parameters += @{kind=$kind;status='pass';preparation=$preparation;selection=$observation;caret=$caret}
             } catch {
                 $parameters += @{kind=$kind;status='fail';error=$_.Exception.Message}
             }

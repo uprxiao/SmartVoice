@@ -88,25 +88,37 @@ jobs:
           Write-NewJson @{ source_sha=$env:GITHUB_SHA; run_id=$env:GITHUB_RUN_ID; phase='before-preflight'; planned=15; attempted=0 } "$env:SVI_PROBE_EVIDENCE/bootstrap.json"
           ./desktop/native/windows/scripts/prepare-probes.ps1 -EnvironmentFile "$env:SVI_PROBE_EVIDENCE/environment.json"
       - name: Run isolated medium-integrity probes
+        id: probes
         shell: pwsh
         run: |
           ./desktop/native/windows/scripts/run-probes.ps1 -OutputDir "$env:SVI_PROBE_EVIDENCE/run" -FixtureExe $env:SVI_PROBE_FIXTURE -ChromeExe $env:SVI_PROBE_CHROME -CodeExe $env:SVI_PROBE_CODE
       - name: Prepare the locked product Electron runtime
+        id: product-runtime
+        if: ${{ !cancelled() && steps.native-build.outcome == 'success' }}
         working-directory: desktop
         run: node node_modules/electron/install.js
       - name: Typecheck product before tests
+        id: product-typecheck
+        if: ${{ !cancelled() && steps.product-runtime.outcome == 'success' }}
         working-directory: desktop
         run: pnpm typecheck
       - name: Test product
+        id: product-test
+        if: ${{ !cancelled() && steps.product-typecheck.outcome == 'success' }}
         working-directory: desktop
         run: pnpm test
       - name: Build the actual Windows installer
+        id: product-build
+        if: ${{ !cancelled() && steps.product-test.outcome == 'success' }}
         shell: pwsh
         run: node scripts/release/build.mjs --platform win --arch x64 --output-dir "$env:RUNNER_TEMP/SVI 产品 smoke"
       - name: Smoke actual product background launch and second instance
+        id: product-smoke
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         run: ./desktop/native/windows/scripts/product-package-smoke.ps1 -PackageDir "$env:RUNNER_TEMP/SVI 产品 smoke" -EvidenceFile "$env:SVI_PROBE_EVIDENCE/product-package.json"
       - name: Preserve the development installer
+        if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-v002-development-${{ github.run_id }}
