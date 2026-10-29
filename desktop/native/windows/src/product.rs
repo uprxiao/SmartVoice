@@ -221,7 +221,30 @@ impl Product {
             }
             if !same_window(&target.window, &current) {
                 if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
-                    return Err("activation_rejected");
+                    // A helper is a different process from the foreground Main and Windows
+                    // can reject its activation request. Restore only the already captured
+                    // UIA element, then ask Windows to activate its original top-level HWND.
+                    // Never use injected activation keys or relax window/control identity.
+                    let Some(now) = foreground::foreground() else {
+                        return Err("activation_rejected");
+                    };
+                    if (now.pid != self.parent && !same_window(&target.window, &now))
+                        || !self.parent_alive()
+                        || !unsafe { IsWindow(Some(hwnd)) }.as_bool()
+                        || !same_window(&target.window, &foreground::describe(hwnd))
+                    {
+                        return Err("restore_from_other_application");
+                    }
+                    if !target
+                        .element
+                        .as_ref()
+                        .is_some_and(|element| unsafe { element.SetFocus() }.is_ok())
+                    {
+                        return Err("focus_restore_failed");
+                    }
+                    // Some providers activate their child Edit HWND. Keep the original
+                    // exact top-level HWND as the success condition, not merely its PID.
+                    let _ = unsafe { SetForegroundWindow(hwnd) };
                 }
                 // Activation crosses input queues and can briefly expose no foreground or
                 // the child Edit HWND. Let Windows restore its own last focused control;
