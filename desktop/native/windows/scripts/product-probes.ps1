@@ -10,6 +10,7 @@ foreach ($k in @('unicode','html','rtf','dib','files','gdi-private','oversize','
 foreach ($k in @('ignore','partial','caret','selection')) { $plannedIds += "TC-WIN-04-product-$k" }
 foreach ($id in @('TC-WIN-06-product-button','TC-WIN-10-product-invalid-lines','TC-WIN-10-product-eof','TC-WIN-10-product-oversize-line','TC-WIN-10-product-parent-exit','TC-WIN-11-product','TC-WIN-14-16-product')) { $plannedIds += $id }
 $plannedIds += 'TC-WIN-08-product-parent-during-wait'
+foreach($id in @('TC-WIN-02-product-latest-position','TC-WIN-02-product-latest-window','TC-WIN-03-product-selection','TC-WIN-03-product-control','TC-WIN-03-product-dead-window','TC-WIN-03-product-own-restore','TC-WIN-15-product-slow-uia','TC-WIN-01-product-notepad-crlf','TC-WIN-01-product-electron-lf','TC-WIN-01-product-electron-crlf')) { $plannedIds += $id }
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
 $productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false
@@ -194,6 +195,7 @@ try {
     }
     . (Join-Path $PSScriptRoot 'product-clipboard-probes.ps1')
     . (Join-Path $PSScriptRoot 'product-boundary-probes.ps1')
+    . (Join-Path $PSScriptRoot 'product-target-probes.ps1')
 } finally {
     $script:Product.StandardInput.Close()
     if (-not $script:Product.WaitForExit(3000)) { $script:Product.Kill($true); $script:Product.WaitForExit(3000) | Out-Null }

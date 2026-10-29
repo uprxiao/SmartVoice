@@ -39,7 +39,7 @@ canvas.addEventListener('paste', event => {
 document.addEventListener('keydown', event => {
   if (event.code === 'Enter' || event.code === 'NumpadEnter') window.enterCount++;
   if (event.code === 'KeyV' && event.ctrlKey) window.pasteChords.push({
-    ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey, meta: event.metaKey
+    ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey, meta: event.metaKey, targetId:event.target.id
   });
 });
 </script>

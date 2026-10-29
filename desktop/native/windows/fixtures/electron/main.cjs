@@ -14,6 +14,7 @@ let main;
 let hud;
 let processing = false;
 let quitting = false;
+let productPeer;
 
 function writeNew(name, data) {
   const target = path.join(folder, name);
@@ -24,7 +25,7 @@ function writeNew(name, data) {
 }
 
 async function stop(child) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('probe child exit not confirmed')), 3000);
     child.once('exit', () => { clearTimeout(timer); children.delete(child); resolve(); });
@@ -63,6 +64,42 @@ async function pingNewHelper() {
 
 async function command(request) {
   switch (request.action) {
+    case 'productPeerStart': {
+      if (process.env.GITHUB_ACTIONS !== 'true' || productPeer) throw new Error('disposable peer already exists or is not allowed');
+      const executable = path.join(process.env.CARGO_TARGET_DIR, 'release', 'smartvoiceinput-input.exe');
+      if (!fs.existsSync(executable)) throw new Error('frozen production helper missing');
+      productPeer = spawn(executable, ['--parent-pid', String(process.pid)], { windowsHide:true, stdio:['pipe','pipe','pipe'] });
+      const child=productPeer;
+      children.add(child);
+      child.once('exit', () => children.delete(child));
+      child.stderr.resume();
+      await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
+      return { pid:child.pid,parent_pid:process.pid,executable };
+    }
+    case 'productPeerRequest': {
+      const child=productPeer;
+      if (!child || child.exitCode !== null || child.signalCode !== null || !Number.isSafeInteger(request.request?.id)) throw new Error('active disposable peer/id required');
+      return new Promise((resolve,reject) => {
+        let buffer='';
+        const clean=()=>{clearTimeout(timer);child.stdout.off('data',data);child.off('exit',exit);};
+        const fail=error=>{clean();reject(error);};
+        const exit=()=>fail(new Error('peer exited before response'));
+        const data=bytes=>{
+          buffer+=bytes.toString('utf8');
+          if(buffer.length>1048576)return fail(new Error('peer protocol limit'));
+          if(!buffer.includes('\n'))return;
+          try {const value=JSON.parse(buffer.slice(0,buffer.indexOf('\n')));if(value.id!==request.request.id)throw new Error('peer id mismatch');clean();resolve(value);}catch(error){fail(error);}
+        };
+        const timer=setTimeout(()=>fail(new Error('peer timeout; never replay')),5000);
+        child.stdout.on('data',data);child.once('exit',exit);
+        child.stdin.write(`${JSON.stringify(request.request)}\n`,error=>{if(error)fail(error);});
+      });
+    }
+    case 'productPeerStop': {
+      if(!productPeer)throw new Error('no disposable peer');
+      const child=productPeer;await stop(child);productPeer=undefined;
+      return {pid:child.pid,exit_confirmed:true,exit_code:child.exitCode,signal:child.signalCode};
+    }
     case 'startup-diagnostics': {
       if (process.env.GITHUB_ACTIONS !== 'true' || path.basename(request.productExe || '') !== 'SmartVoiceInput.exe'
         || !fs.existsSync(request.productExe)) throw new Error('disposable product fixture required');
@@ -128,9 +165,21 @@ async function command(request) {
     }
     case 'fieldState':
       return main.webContents.executeJavaScript(`(() => {
-        const e=document.activeElement; return {value:e.value, start:e.selectionStart, end:e.selectionEnd, chords:window.pasteChords,
+        const e=document.activeElement; return {activeId:e.id,value:e.value, start:e.selectionStart, end:e.selectionEnd, chords:window.pasteChords,
+          fields:Object.fromEntries(['plain','editor'].map(id=>{const f=document.getElementById(id);return [id,{value:f.value,start:f.selectionStart,end:f.selectionEnd}]})),
           canvasValue:window.canvasValue, canvasPasteCount:window.canvasPasteCount, enterCount:window.enterCount};
       })()`);
+    case 'blockMain': {
+      if (!/^product-[a-z-]+$/.test(request.label) || !Number.isSafeInteger(request.duration_ms)
+        || request.duration_ms < 1000 || request.duration_ms > 2500) throw new Error('bounded fixture block required');
+      setImmediate(() => {
+        const started = performance.now();
+        writeNew(`${request.label}-started.json`, { monotonic_ms: started, duration_ms: request.duration_ms });
+        while (performance.now() - started < request.duration_ms) { /* owned fixture UIA provider unavailable */ }
+        writeNew(`${request.label}-ended.json`, { elapsed_ms: performance.now() - started });
+      });
+      return { scheduled: true, duration_ms: request.duration_ms };
+    }
     case 'hotkeys': {
       const values = [];
       for (const accelerator of ['Control+Shift+Space', 'Control+Alt+Space']) {
