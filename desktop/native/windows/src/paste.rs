@@ -105,6 +105,10 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
     let mut after = None;
     let mut matched = false;
     loop {
+        if Instant::now() > until {
+            matched = false;
+            break;
+        }
         if let (Some(fg), Ok(el)) = (foreground::foreground(), uia.focused()) {
             if fg.hwnd == identity.hwnd
                 && fg.process_birth_100ns == identity.process_birth_100ns
@@ -114,7 +118,11 @@ pub fn current(uia: &Uia, fixture_pid: u32, text: &str) -> R<Value> {
                 matched = verification::exactly_matches(expected.as_ref(), after.as_ref());
             }
         }
-        if matched || Instant::now() >= until {
+        if Instant::now() > until {
+            matched = false;
+            break;
+        }
+        if matched {
             break;
         }
         std::thread::sleep(Duration::from_millis(100));

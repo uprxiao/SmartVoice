@@ -419,6 +419,9 @@ impl Product {
             std::thread::sleep(Duration::from_millis(350));
             let end = Instant::now() + Duration::from_millis(1000);
             let matched = loop {
+                if Instant::now() > end {
+                    break false;
+                }
                 let matched = foreground::foreground()
                     .is_some_and(|f| same_window(&target.window, &f))
                     && target.element.as_ref().is_some_and(|el| {
@@ -430,8 +433,13 @@ impl Product {
                                 readable(&self.uia, el).as_ref(),
                             )
                     });
-                if matched || Instant::now() >= end {
-                    break matched;
+                // A single provider call can return after the polling deadline. Its now-correct
+                // text must not turn a timed-out verification into a confirmed insertion.
+                if Instant::now() > end {
+                    break false;
+                }
+                if matched {
+                    break true;
                 }
                 std::thread::sleep(Duration::from_millis(75));
             };
