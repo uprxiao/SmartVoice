@@ -1,24 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const f = vi.hoisted(() => ({ packaged: true, read: vi.fn(), write: vi.fn(), open: vi.fn(), microphone: vi.fn() }));
-vi.mock('electron', () => ({ app: { get isPackaged() { return f.packaged; }, getLoginItemSettings: f.read, setLoginItemSettings: f.write },
+const f = vi.hoisted(() => ({ packaged: true, read: vi.fn(), write: vi.fn(), identity: vi.fn(), open: vi.fn(), microphone: vi.fn() }));
+vi.mock('electron', () => ({ app: { get isPackaged() { return f.packaged; }, getLoginItemSettings: f.read, setLoginItemSettings: f.write, setAppUserModelId: f.identity },
   shell: { openExternal: f.open }, systemPreferences: { getMediaAccessStatus: f.microphone } }));
-import { autoStartInfo, microphoneInfo, openMicrophoneSettings, openStartupSettings, updateAutoStart } from '../../../native/system-settings';
+import { autoStartInfo, configureWindowsAppIdentity, microphoneInfo, openMicrophoneSettings, openStartupSettings, updateAutoStart } from '../../../native/system-settings';
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 let registered: boolean, enabled: boolean;
 beforeEach(() => {
   vi.resetAllMocks(); Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   registered = false; enabled = false; f.packaged = true;
   f.read.mockImplementation(() => ({ openAtLogin: registered, executableWillLaunchAtLogin: true,
-    launchItems: registered ? [{ name: 'SmartVoiceInput', path: process.execPath, args: ['--background'], scope: 'user', enabled }] : [] }));
+    launchItems: registered ? [{ name: 'com.smartvoiceinput.desktop', path: process.execPath, args: [], scope: 'user', enabled }] : [] }));
   f.write.mockImplementation((options: { openAtLogin: boolean; enabled: boolean }) => { registered = options.openAtLogin; enabled = options.enabled; });
 });
 afterEach(() => Object.defineProperty(process, 'platform', platform));
 describe('Windows startup state is read back from its own exact entry', () => {
+  it('sets the stable Windows app identity and leaves the Mac identity unchanged', () => {
+    configureWindowsAppIdentity(); expect(f.identity).toHaveBeenCalledExactlyOnceWith('com.smartvoiceinput.desktop');
+    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' });
+    configureWindowsAppIdentity(); expect(f.identity).toHaveBeenCalledTimes(1);
+  });
   it('defaults off even when another launch of the executable is enabled, and reads back a real toggle', () => {
     expect(autoStartInfo()).toMatchObject({ registered: false, enabled: false, error: false });
     expect(updateAutoStart(true)).toMatchObject({ registered: true, enabled: true });
     expect(f.read).toHaveBeenCalledWith({ path: `"${process.execPath}"`, args: ['--background'] });
-    expect(f.write).toHaveBeenCalledWith(expect.objectContaining({ name: 'SmartVoiceInput', args: ['--background'], path: process.execPath }));
+    expect(f.write).toHaveBeenCalledWith(expect.objectContaining({ name: 'com.smartvoiceinput.desktop', args: ['--background'], path: process.execPath }));
     expect(updateAutoStart(false)).toMatchObject({ registered: false, enabled: false });
   });
   it('distinguishes system-disabled registration and never adopts another entry', () => {
@@ -27,10 +32,13 @@ describe('Windows startup state is read back from its own exact entry', () => {
     f.read.mockReturnValue({ openAtLogin: true, launchItems: [{ name: 'Other', path: process.execPath, args: ['--background'], enabled: true }] });
     expect(autoStartInfo()).toMatchObject({ error: true, enabled: false });
   });
-  it('uses its own user entry when the legacy AppUserModelID flag is false', () => {
-    f.read.mockReturnValue({ openAtLogin: false, launchItems: [{ name: 'SmartVoiceInput', path: process.execPath, args: ['--background'], scope: 'user', enabled: true }] });
+  it('requires exact command-line proof even though launchItems omits switch arguments', () => {
+    f.read.mockReturnValue({ openAtLogin: true, launchItems: [{ name: 'com.smartvoiceinput.desktop', path: process.execPath, args: [], scope: 'user', enabled: true }] });
     expect(autoStartInfo()).toMatchObject({ registered: true, enabled: true, error: false });
-    f.read.mockReturnValue({ openAtLogin: false, launchItems: [{ name: 'SmartVoiceInput', path: process.execPath, args: ['--background'], scope: 'machine', enabled: true }] });
+    f.read.mockReturnValue({ openAtLogin: false, launchItems: [{ name: 'com.smartvoiceinput.desktop', path: process.execPath, args: [], scope: 'user', enabled: true }] });
+    expect(autoStartInfo()).toMatchObject({ registered: true, enabled: false, error: true });
+    expect(() => updateAutoStart(true)).toThrow('AUTOSTART_UNAVAILABLE');
+    f.read.mockReturnValue({ openAtLogin: false, launchItems: [{ name: 'com.smartvoiceinput.desktop', path: process.execPath, args: [], scope: 'machine', enabled: true }] });
     expect(autoStartInfo()).toMatchObject({ registered: false, enabled: false });
   });
   it('does not acknowledge an ineffective write and verifies rollback', () => {

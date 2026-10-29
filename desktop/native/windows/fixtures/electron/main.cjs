@@ -66,12 +66,14 @@ async function command(request) {
     case 'startup-diagnostics': {
       if (process.env.GITHUB_ACTIONS !== 'true' || path.basename(request.productExe || '') !== 'SmartVoiceInput.exe'
         || !fs.existsSync(request.productExe)) throw new Error('disposable product fixture required');
+      const entry='com.smartvoiceinput.desktop';
+      app.setAppUserModelId(entry);
       const options={path:request.productExe,args:['--background']};
       const quoted={...options,path:`"${request.productExe}"`};
       const runKey='HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
       const approvedKey='HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run';
       const query=(key,entry)=>{
-        const args=['query',key];if(entry)args.push('/v','SmartVoiceInput');
+        const args=['query',key];if(entry)args.push('/v','com.smartvoiceinput.desktop');
         const result=spawnSync('reg.exe',args,{encoding:'utf8',windowsHide:true,timeout:3000});
         return {status:result.status,error:result.error?.message,output:entry?result.stdout:undefined,stderr:result.stderr};
       };
@@ -80,14 +82,14 @@ async function command(request) {
       const initialQuoted=app.getLoginItemSettings(quoted);
       const before=registry();
       if(initial.openAtLogin || initialQuoted.openAtLogin || before.ownRun.status===0 || before.ownApproved.status===0
-        || initialQuoted.launchItems.some(item=>item.name==='SmartVoiceInput')) throw new Error('refusing to replace an existing startup entry');
+        || initialQuoted.launchItems.some(item=>item.name===entry)) throw new Error('refusing to replace an existing startup entry');
       let enabled,enabledQuoted,after;
       try {
-        app.setLoginItemSettings({...options,name:'SmartVoiceInput',openAtLogin:true,enabled:true});
+        app.setLoginItemSettings({...options,name:entry,openAtLogin:true,enabled:true});
         enabled=app.getLoginItemSettings(options);
         enabledQuoted=app.getLoginItemSettings(quoted);
         after=registry();
-      } finally {app.setLoginItemSettings({...options,name:'SmartVoiceInput',openAtLogin:false,enabled:false});}
+      } finally {app.setLoginItemSettings({...options,name:entry,openAtLogin:false,enabled:false});}
       return {initial,initialQuoted,before,enabled,enabledQuoted,after,final:app.getLoginItemSettings(quoted),cleanup:registry(),
         scope:'independent Electron control using the actual product path; own entry only; not a product fix'};
     }

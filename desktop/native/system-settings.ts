@@ -2,8 +2,13 @@ import { app, shell, systemPreferences } from 'electron';
 import { win32 } from 'node:path';
 import type { AppInfo, AutoStartInfo } from '../src/shared/types';
 
-const ENTRY = 'SmartVoiceInput';
+// Match electron-builder's appId and set this identity before any login-item RPC.
+// Electron's exact command-line comparison looks up the AppUserModelID entry.
+const ENTRY = 'com.smartvoiceinput.desktop';
 const ARGS = ['--background'];
+export function configureWindowsAppIdentity(): void {
+  if (process.platform === 'win32') app.setAppUserModelId(ENTRY);
+}
 export function microphoneInfo(): AppInfo['microphone'] {
   try {
     const status = systemPreferences.getMediaAccessStatus('microphone');
@@ -22,11 +27,13 @@ export function autoStartInfo(): AutoStartInfo {
     // is an API argument, not a shell command; the setter accepts the raw path.
     const info = app.getLoginItemSettings({ path: `"${process.execPath}"`, args: ARGS });
     const items = info.launchItems.filter(item => item.name === ENTRY && item.scope === 'user'
-      && win32.normalize(item.path).toLowerCase() === win32.normalize(process.execPath).toLowerCase()
-      && JSON.stringify(item.args) === JSON.stringify(ARGS));
+      && win32.normalize(item.path).toLowerCase() === win32.normalize(process.execPath).toLowerCase());
     const registered = info.openAtLogin || items.length > 0;
     // Do not use executableWillLaunchAtLogin: that ignores the launch arguments.
-    if (registered && items.length === 0) return { ...empty, registered, error: true };
+    // launchItems.args uses Chromium GetArgs(), which omits --switches. With
+    // name === AppUserModelID, openAtLogin compares the entire formatted command
+    // line, including --background. Both proofs are required; neither alone is enough.
+    if (registered && (!info.openAtLogin || items.length === 0)) return { ...empty, registered, error: true };
     const enabled = items.some(item => item.enabled);
     return { ...empty, registered, enabled, systemDisabled: registered && !enabled };
   } catch { return { ...empty, error: true }; }

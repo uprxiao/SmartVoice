@@ -108,7 +108,7 @@ Main 保持强引用 Tray，使用自有图标，菜单“打开/退出”。首
 
 统一 `ensureMainWindow/showMainWindow` 处理托盘打开、第二实例、activate；最小化先 restore，已销毁则只重建一个，早到 second-instance 在初始化后执行。新窗口必须重新绑定渲染崩溃中断处理；鉴权与音频 sender 校验仍使用当前窗口。快捷键和结果不调用 showMainWindow。
 
-自启只在 Windows 安装版可配置；开发环境不把 Electron 开发壳注册进系统。`setLoginItemSettings` 使用本应用稳定名称、当前安装 exe、`args:['--background']`；读回必须使用相同 exe/args，并核名称、user scope、路径及参数均匹配的 launchItems.enabled，区分已注册与被系统禁用。锁定的 [Electron 42.11.15 实现](https://github.com/electron/electron/blob/v42.11.15/shell/browser/browser_win.cc) 将 getter 的 path 按命令行解析，因此查询参数中的 exe 路径须加双引号，支持含空格及中文的安装目录；setter 仍传原始路径，由 Electron 统一转义。legacy openAtLogin 只查询 AppUserModelID，不能替代自有命名启动项的读回。开关成功读回后再确认 UI；失败回滚并复核原配置，若无法确认回滚明确报状态不确定并重新读取，不假报成功。入口固定 `ms-settings:startupapps`。
+自启只在 Windows 安装版可配置；开发环境不把 Electron 开发壳注册进系统。Main 启动时将 AppUserModelID 明确设置为与安装器 appId 一致的 `com.smartvoiceinput.desktop`，启动项 name 使用同一固定 ID；`setLoginItemSettings` 使用当前安装 exe、`args:['--background']`。读回必须同时满足：同 exe/args 的 openAtLogin 完整命令行匹配，以及名称、user scope、路径匹配的 launchItems.enabled；据此区分已注册与被系统禁用。锁定的 [Electron 42.11.15 实现](https://github.com/electron/electron/blob/v42.11.15/shell/browser/browser_win.cc) 将 getter 的 path 按命令行解析，因此查询参数中的 exe 路径须加双引号，支持含空格及中文的安装目录；setter 仍传原始路径，由 Electron 统一转义。launchItems.args 的 Chromium GetArgs 会省略 `--background` 这类 switch，不能用它验证启动参数；openAtLogin 仅对 AppUserModelID 对应项比较完整命令行，故固定身份与同名项是必要前提。任一证据不符均报错误，不忽略参数，也不单用 executableWillLaunchAtLogin。开关成功读回后再确认 UI；失败回滚并复核原配置，若无法确认回滚明确报状态不确定并重新读取，不假报成功。入口固定 `ms-settings:startupapps`。
 
 启动参数仅在 Windows 使用：`--background` 创建并保留隐藏主窗口与 Tray，不弹主窗；用户主动再次启动总是打开主窗。自启不自动口述、不登录新账号、不改 token 安全存储。卸载钩子只清理本应用名称的 Run/StartupApproved 值，不删除其他启动项或用户账号文件。
 

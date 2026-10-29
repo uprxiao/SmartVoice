@@ -24,6 +24,7 @@ import { HudVisibility } from './app/hud-visibility';
 import { HudPosition, inputRectangle } from './app/hud-position';
 import { WindowsTray } from './app/windows-tray';
 import { inputGeometryToDip } from '../../native/input-geometry';
+import { configureWindowsAppIdentity } from '../../native/system-settings';
 import {
   createHudWindow,
   createMainWindow,
@@ -45,6 +46,7 @@ import { createRpcRouter } from './rpc';
 import { createRendererRpcAuthorizer } from './rpc-authorization';
 
 app.setName('SmartVoiceInput');
+configureWindowsAppIdentity();
 if (process.env.SVI_USER_DATA) app.setPath('userData', process.env.SVI_USER_DATA);
 
 const gotLock = app.requestSingleInstanceLock();
