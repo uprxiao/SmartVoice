@@ -1,0 +1,9 @@
+{
+  "name": "smartvoiceinput-windows-probe",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Independent Windows feasibility fixture; not the SmartVoiceInput product",
+  "main": "main.cjs",
+  "author": "SmartVoiceInput",
+  "license": "MIT"
+}

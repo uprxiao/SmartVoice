@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>SVI Chrome feasibility fixture</title>
+<style>body{font:20px sans-serif;padding:40px}input,textarea{display:block;width:650px;padding:12px;font:20px sans-serif}textarea{height:180px}</style>
+<h1>SmartVoiceInput：Chrome 技术验证</h1>
+<p>虚构文本。实际值与选区由 UI Automation 独立读回。</p>
+<script>
+const kind = new URLSearchParams(location.search).get('kind');
+const field = document.createElement(kind === 'textarea' ? 'textarea' : 'input');
+field.value = 'BEGIN React END';
+field.setAttribute('aria-label', 'SVI fictional probe field');
+document.body.append(field);
+addEventListener('load', () => { field.focus(); field.setSelectionRange(6, 11); });
+</script>
+</html>

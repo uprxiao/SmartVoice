@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>SVI Windows feasibility fixture</title>
+<style>body{font:18px sans-serif;padding:20px}label{display:block;margin:16px 0}input,textarea{font:18px sans-serif;width:560px;padding:8px}textarea{height:90px}</style>
+<h1>SmartVoiceInput Windows 技术验证</h1>
+<p>全部为虚构夹具，仅用于独立技术验证。</p>
+<label>普通输入框 <input id="plain" value="BEGIN React END"></label>
+<label>多行输入框 <textarea id="editor">BEGIN React END</textarea></label>
+<label>密码 <input id="password" type="password" value="fixture-only"></label>
+<label>只读 <input id="readonly" readonly value="fixture-only"></label>
+<label>禁用 <input id="disabled" disabled value="fixture-only"></label>
+<canvas id="unreadable" tabindex="0" width="600" height="55" role="application" aria-label="SVI custom input fixture"></canvas>
+<script>
+window.pasteChords = [];
+window.canvasValue = '';
+window.canvasPasteCount = 0;
+const canvas = document.getElementById('unreadable');
+canvas.getContext('2d').fillText('Custom input: no UIA text/caret provider', 5, 25);
+canvas.addEventListener('paste', event => {
+  event.preventDefault();
+  window.canvasValue = event.clipboardData.getData('text/plain');
+  window.canvasPasteCount++;
+});
+document.addEventListener('keydown', event => {
+  if (event.code === 'KeyV' && event.ctrlKey) window.pasteChords.push({
+    ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey, meta: event.metaKey
+  });
+});
+</script>
+</html>

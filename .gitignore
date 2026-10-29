@@ -53,6 +53,7 @@ coverage/
 
 # 桌面端构建时生成的原生 helper
 /desktop/resources/voice/
+/desktop/native/windows/target/
 
 # 模型权重由部署环境提供
 /models/

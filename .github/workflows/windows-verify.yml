@@ -1,0 +1,77 @@
+name: Windows technical probes
+
+# Called from the already-registered Build installers workflow on feature/0.0.2.
+# This file need not be merged to main just to dispatch the verification branch.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  native-probes:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set isolated probe directories
+        shell: pwsh
+        run: |
+          "CARGO_TARGET_DIR=$env:RUNNER_TEMP/svi-rust-target" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_PROBE_BUNDLE=$env:RUNNER_TEMP/svi-probe-bundle" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_PROBE_EVIDENCE=$env:RUNNER_TEMP/svi-windows-evidence" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Validate PowerShell syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem desktop/native/windows/scripts/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
+      - name: Check Rust before unit tests
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path desktop/native/windows/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --locked --all-targets --manifest-path desktop/native/windows/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --lib --manifest-path desktop/native/windows/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release --bins --manifest-path desktop/native/windows/Cargo.toml
+          exit $LASTEXITCODE
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install locked Electron tools
+        working-directory: desktop
+        shell: pwsh
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build independent fixture with native extraResources
+        working-directory: desktop
+        shell: pwsh
+        run: pnpm exec electron-builder --win --x64 --dir --config native/windows/fixtures/electron-builder.cjs --publish never
+      - name: Freeze runtime and fictional inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path $env:SVI_PROBE_EVIDENCE | Out-Null
+          ./desktop/native/windows/scripts/prepare-probes.ps1 -EnvironmentFile "$env:SVI_PROBE_EVIDENCE/environment.json"
+      - name: Run isolated medium-integrity probes
+        shell: pwsh
+        run: |
+          ./desktop/native/windows/scripts/run-probes.ps1 -OutputDir "$env:SVI_PROBE_EVIDENCE/run" -FixtureExe $env:SVI_PROBE_FIXTURE -ChromeExe $env:SVI_PROBE_CHROME -CodeExe $env:SVI_PROBE_CODE
+      - name: Preserve all results including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-probes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/svi-windows-evidence/
+          if-no-files-found: warn
+          retention-days: 1

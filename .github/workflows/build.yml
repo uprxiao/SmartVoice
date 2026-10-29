@@ -24,9 +24,15 @@ permissions:
 
 jobs:
   checks:
+    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2'
     uses: ./.github/workflows/ci.yml
 
+  windows-probes:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2'
+    uses: ./.github/workflows/windows-verify.yml
+
   package:
+    if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2'
     needs: checks
     strategy:
       fail-fast: false
