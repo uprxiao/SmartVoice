@@ -29,3 +29,9 @@ describe('platform reserved shortcut comparison', () => {
     // Pure table tests do not claim Windows native/platform acceptance.
   });
 });
+
+it.each(['Shift+Space','Space + shift','Ctrl+Space','Control+Space','CmdOrCtrl+Space'])(
+  'Windows reserves IME combination %s while retaining the candidate dictation chord', key => {
+    expect(shortcutPolicyError(key, 'win32')).not.toBeNull();
+    expect(shortcutPolicyError('Control+Shift+Space', 'win32')).toBeNull();
+  });

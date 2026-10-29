@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceleratorFromKeyEvent } from './shortcut';
+import { acceleratorFromKeyEvent, friendlyShortcut } from './shortcut';
 import { shortcutPolicyError } from '@root/native/shortcut-policy';
 
 const keyEvent = (key: string, code: string, patch: Partial<KeyboardEvent> = {}) => ({
@@ -24,4 +24,10 @@ describe('shortcut recorder preserves the underlying chord', () => {
   it('does not turn plain typing into a global shortcut', () => {
     expect(acceleratorFromKeyEvent(keyEvent('c', 'KeyC', { metaKey: false }))).toBeNull();
   });
+});
+
+it('Windows renders actual key names and records Win separately from Ctrl', () => {
+  expect(friendlyShortcut('CommandOrControl+Shift+Space', 'win32')).toBe('Ctrl + Shift + Space');
+  expect(friendlyShortcut('Super+Alt+X', 'win32')).toBe('Win + Alt + X');
+  expect(acceleratorFromKeyEvent({key:'x',code:'KeyX',metaKey:true,ctrlKey:false,altKey:false,shiftKey:false},'win32')).toBe('Super+X');
 });

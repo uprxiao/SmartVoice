@@ -23,6 +23,7 @@ if (process.platform === 'darwin') {
 }
 if (process.platform === 'win32') {
   const result = spawnSync('cargo', ['build', '--locked', '--release', '--target', 'x86_64-pc-windows-msvc',
+    '--config', 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]',
     '--manifest-path', 'native/windows/Cargo.toml', '--bin', 'smartvoiceinput-input'], { stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);

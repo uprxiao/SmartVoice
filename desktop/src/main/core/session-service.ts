@@ -14,6 +14,7 @@ import { AudioFlow, AudioFlowError } from './audio-flow';
 import { InsertionJournal, type InsertionIntent, type InsertionMark } from './insertion-journal';
 import { CorrectionObserver, parseNativeObservation, type ObservationIdentity } from './correction-observer';
 import type { Replacement } from './replacement';
+import { windowsInputMessage } from '@shared/windows-input-messages';
 
 const TERMINAL = new Set(['ready', 'empty', 'failed', 'cancelled']);
 const monotonicEpochMs = (): number => performance.timeOrigin + performance.now();
@@ -208,7 +209,7 @@ export class SessionService {
     const snapshot = this.auth.ensure();
     this.reset();
     this.ownerId = snapshot.user.id;
-    this.sessionLearningEnabled = learningEnabled && snapshot.settings.learning_enabled;
+    this.sessionLearningEnabled = this.native.supportsObservation !== false && learningEnabled && snapshot.settings.learning_enabled;
     const ctx = this.context();
     this.starting = true;
     this.autoInsertAllowed = true;
@@ -224,7 +225,7 @@ export class SessionService {
       const session = await this.wait(ctx, request);
       this.assertCurrent(ctx);
       this.sessionId = session.session_id; this.attemptNo = session.current_attempt_no;
-      this.sessionLearningEnabled = session.learning_enabled === true;
+      this.sessionLearningEnabled = this.native.supportsObservation !== false && session.learning_enabled === true;
       // V2 §4.1: this session's limit is fixed by the server at creation.
       const maxSamples = sessionMaxSamples(session.max_record_seconds);
       this.flow = new AudioFlow(maxSamples); this.frameTotals.clear(); this.acknowledgedSequence = -1;
@@ -248,7 +249,7 @@ export class SessionService {
       const permission = await this.wait(ctx, this.native.call('permission', { prompt: false }), 6000);
       this.assertCurrent(ctx);
       if (captureEpoch !== this.targetCaptureEpoch) return;
-      if (!permission.trusted) { this.targetError = '需要辅助功能权限才能插入到其他应用'; return; }
+      if (!permission.trusted) { this.targetError = process.platform === 'darwin' ? '需要辅助功能权限才能插入到其他应用' : '原生输入组件不可用，请复制结果后手动粘贴'; return; }
       const operation = this.native.call('capture');
       void operation.then(target => {
         if ((abandoned || !this.currentContext(ctx) || captureEpoch !== this.targetCaptureEpoch) && typeof target.target === 'string') {
@@ -614,7 +615,7 @@ export class SessionService {
       this.nextOperation();
       this.starting = false;
       this.ownerId = ctx.userId; this.sessionId = session.session_id; this.attemptNo = session.current_attempt_no;
-      this.sessionLearningEnabled = session.learning_enabled;
+      this.sessionLearningEnabled = this.native.supportsObservation !== false && session.learning_enabled;
       this.targetId = this.targetApp = null;
       this.targetError = '历史结果请重新指定输入目标，或复制结果';
       this.insertionId = null; this.lastOutcome = null;
@@ -819,6 +820,7 @@ export class SessionService {
     let observable = false;
     let errorCode: string | null = 'VERIFY_FAILED';
     let message = '无法确认是否已输入，请检查目标；不会重复执行';
+    let warning: string | undefined;
     try {
       // The durable started mark is already fsynced. Exactly one native call follows.
       const response = await this.native.call(explicit ? 'insert' : 'insertCurrent', {
@@ -837,12 +839,15 @@ export class SessionService {
       } else if (response.status === 'failed' && response.effect === 'none') {
         phase = 'failed'; errorCode = this.receiptCode(response.code, 'ZERO_WRITE');
       } else { errorCode = this.receiptCode(response.code, 'VERIFY_FAILED'); }
-      if (typeof response.message === 'string') message = response.message;
+      if (typeof response.warning === 'string') warning = windowsInputMessage(response.warning, this.auth.current?.settings.locale);
+      if (typeof response.message === 'string') message = process.platform === 'win32'
+        ? windowsInputMessage(response.message, this.auth.current?.settings.locale) : response.message;
     } catch (error) {
       if (error instanceof NativeCallError && error.effect === 'none') {
         phase = 'failed'; errorCode = this.receiptCode(error.code, 'ZERO_WRITE');
       } else { phase = 'unverified'; errorCode = 'CLIENT_INTERRUPTED'; }
       message = error instanceof Error ? error.message : message;
+      if (process.platform === 'win32') message = windowsInputMessage(message, this.auth.current?.settings.locale);
     }
     try { mark = this.journal.finish(intent, phase, observable, errorCode); }
     catch {
@@ -850,7 +855,7 @@ export class SessionService {
       return this.outcome(ctx, result, { status: 'unverified', observable: false, error_code: 'CLIENT_INTERRUPTED',
         message: '输入执行记录保存失败，请检查目标；不会再次输入', insertion_id: insertionId, review_required: result.review_required });
     }
-    const outcome: InsertionOutcome = { status: phase, observable, error_code: errorCode, message,
+    const outcome: InsertionOutcome = { status: phase, observable, error_code: errorCode, message, ...(warning ? { warning } : {}),
       insertion_id: insertionId, review_required: result.review_required };
     this.outcome(ctx, result, outcome);
     if (phase === 'inserted' && observable && targetId && this.currentContext(ctx) && this.sessionLearningEnabled && this.auth.learningEnabled) {
@@ -1010,6 +1015,7 @@ export class SessionService {
   dispose(): void { this.invalidateAccount(); }
   current(): SessionProgress {
     return Object.freeze({ ...this.progress,
+      locale: this.auth.current?.settings.locale ?? 'zh-CN',
       target: Object.freeze({ insertion_available: this.targetId !== null, target_app: this.targetApp, target_error: this.targetError }),
       result: this.progress.result ? Object.freeze({ ...this.progress.result }) : null });
   }

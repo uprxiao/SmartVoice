@@ -118,9 +118,9 @@ HudPosition 继续按当前代际/可见性检查迟到响应；显示、更新�
 
 ## 构建、部署与三端责任
 
-`build-voice-helper.mjs` 在 Windows 用 Cargo `--locked --release --target x86_64-pc-windows-msvc --bin smartvoiceinput-input`，检查真实退出码，再将唯一正式 exe 复制到 resources/voice。Mac Swift 构建保持。Windows 安装包只装对应 `.exe`，Mac 只装其 helper；不得顺手打包 verify、probe、源码、夹具或其他平台残留文件。
+`build-voice-helper.mjs` 在 Windows 用 Cargo `--locked --release --target x86_64-pc-windows-msvc --bin smartvoiceinput-input`，显式使用 `crt-static`（[Rust 依据](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)），检查真实退出码，再将唯一正式 exe 复制到 resources/voice。Mac Swift 构建保持。Windows 安装包只装对应 `.exe`，Mac 只装其 helper；不得顺手打包 verify、probe、源码、夹具或其他平台残留文件。
 
-沿用 NSIS、现有公开内网 CA/服务地址注入与 HTTPS/WSS；Rust 无独立运行时安装步骤，不加管理员 manifest/uiAccess。版本元数据按项目发布约定同步；分支 push 不创建 tag、不发布。Windows 普通 CI 构建纳入 Rust 检查/单测；技术验证与正式产品 smoke 分开，源 SHA、环境和失败分母留证。
+沿用 NSIS、现有公开内网 CA/服务地址注入与 HTTPS/WSS；Rust 无独立运行时安装步骤，产品 smoke 检查实际 DLL 导入不依赖外部 C runtime，不加管理员 manifest/uiAccess。版本元数据按项目发布约定同步；分支 push 不创建 tag、不发布。Windows 普通 CI 构建纳入 Rust 检查/单测；技术验证与正式产品 smoke 分开，源 SHA、环境和失败分母留证。
 
 | 交付物 | S4 工作 | 验证 |
 |---|---|---|

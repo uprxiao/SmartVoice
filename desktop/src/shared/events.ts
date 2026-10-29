@@ -17,6 +17,7 @@ export interface HudNotice {
   kind: 'permission' | 'insert-failed';
   message: string;
   permission: boolean;
+  locale?: 'zh-CN' | 'en';
 }
 export const HUD_NOTICE_MS = 8_000;
 export const hudNoticeEvent = defineEvent<HudNotice | null>('hud.notice');

@@ -10,6 +10,7 @@ import type { NativeVoiceInput } from './core/native-input';
 import type { SessionService } from './core/session-service';
 import type { ShortcutService } from './core/shortcut-service';
 import type { HudNotice } from '@shared/events';
+import { autoStartInfo, microphoneInfo, openMicrophoneSettings, openStartupSettings, updateAutoStart } from '../../native/system-settings';
 
 export interface RpcDeps {
   api: ApiClient;
@@ -47,8 +48,12 @@ export function createRpcRouter(deps: RpcDeps) {
           version: app.getVersion(),
           electron: process.versions.electron,
           platform: process.platform,
-          accessibilityTrusted: trusted,
-          accessibilitySupported: supported,
+          accessibilityTrusted: process.platform === 'darwin' && trusted,
+          accessibilitySupported: process.platform === 'darwin' && supported,
+          nativeInputSupported: supported,
+          correctionObservationSupported: deps.native.supportsObservation ?? process.platform === 'darwin',
+          microphone: microphoneInfo(),
+          autoStart: autoStartInfo(),
           apiBaseUrl: deps.api.baseUrl,
           shortcut: deps.shortcuts.current,
         };
@@ -82,11 +87,14 @@ export function createRpcRouter(deps: RpcDeps) {
         }
       },
       updateShortcut: (accelerator: string) => deps.shortcuts.update(accelerator),
-      requestAccessibility: () => deps.native.call('permission', { prompt: true }),
-      openAccessibilitySettings: () =>
-        shell.openExternal(
-          'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
-        ),
+      requestAccessibility: () => process.platform === 'darwin' ? deps.native.call('permission', { prompt: true }) : { supported: false, trusted: false },
+      openAccessibilitySettings: async () => {
+        if (process.platform !== 'darwin') throw new Error('SYSTEM_SETTINGS_UNAVAILABLE');
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+      },
+      openMicrophoneSettings,
+      openStartupSettings,
+      updateAutoStart,
       openExternal: async (url: string) => {
         if (!/^https?:\/\//i.test(url)) throw new Error('只允许打开 http(s) 链接');
         await shell.openExternal(url);
@@ -113,13 +121,13 @@ export function createRpcRouter(deps: RpcDeps) {
         try {
           // An OS permission prompt has no audio to upload. Do not create a
           // server session (and spend its audio-idle budget) while it is open.
-          if (process.platform === 'darwin') {
+          if (process.platform === 'darwin' || process.platform === 'win32') {
             const microphoneStatus = () => {
               try { return systemPreferences.getMediaAccessStatus('microphone'); }
               catch { throw new Error('MICROPHONE_PERMISSION_UNAVAILABLE'); }
             };
             let status = microphoneStatus();
-            if (status === 'not-determined') {
+            if (status === 'not-determined' && process.platform === 'darwin') {
               let granted: boolean;
               try { granted = await systemPreferences.askForMediaAccess('microphone'); }
               catch { throw new Error('MICROPHONE_PERMISSION_UNAVAILABLE'); }
@@ -163,8 +171,9 @@ export function createRpcRouter(deps: RpcDeps) {
         // Automatic insertion runs while the user is in another app: surface a
         // proven zero-write on the HUD. Unverified may have written; no HUD alarm.
         if (!explicit && outcome.status === 'failed') {
-          const permission = outcome.error_code === 'PERMISSION_DENIED';
+          const permission = process.platform === 'darwin' && outcome.error_code === 'PERMISSION_DENIED';
           deps.notifyHud?.({ kind: 'insert-failed', permission,
+            ...(process.platform === 'win32' ? { locale: deps.auth.current?.settings?.locale ?? 'zh-CN' } : {}),
             message: permission ? PERMISSION_FAILED_HINT : outcome.message || '未能自动输入，可复制结果' });
         }
         return outcome;

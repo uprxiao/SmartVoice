@@ -17,6 +17,12 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.useRealTimers();Object.defineProperty(process,'platform',platform);});
 describe('microphone authorization precedes creation of a server audio session',()=>{
+  it.each(['denied','restricted','unknown','not-determined'] as const)('Windows %s never invokes the Mac permission request or creates a session',async status=>{
+    Object.defineProperty(process,'platform',{...platform,value:'win32'});
+    const f=fixture();vi.mocked(systemPreferences.getMediaAccessStatus).mockReturnValue(status);
+    await expect(f.router.session.start(true,OP_A)).rejects.toThrow(/MICROPHONE_PERMISSION/);
+    expect(f.sessions.start).not.toHaveBeenCalled();expect(systemPreferences.askForMediaAccess).not.toHaveBeenCalled();
+  });
   it('does not consume the server audio-idle budget while the OS prompt is pending over ten seconds',async()=>{
     vi.useFakeTimers();const f=fixture(),permission=pending<boolean>();
     vi.mocked(systemPreferences.getMediaAccessStatus).mockReturnValue('not-determined');

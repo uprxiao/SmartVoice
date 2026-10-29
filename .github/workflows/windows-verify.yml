@@ -91,6 +91,30 @@ jobs:
         shell: pwsh
         run: |
           ./desktop/native/windows/scripts/run-probes.ps1 -OutputDir "$env:SVI_PROBE_EVIDENCE/run" -FixtureExe $env:SVI_PROBE_FIXTURE -ChromeExe $env:SVI_PROBE_CHROME -CodeExe $env:SVI_PROBE_CODE
+      - name: Prepare the locked product Electron runtime
+        working-directory: desktop
+        run: node node_modules/electron/install.js
+      - name: Typecheck product before tests
+        working-directory: desktop
+        run: pnpm typecheck
+      - name: Test product
+        working-directory: desktop
+        run: pnpm test
+      - name: Build the actual Windows installer
+        shell: pwsh
+        run: node scripts/release/build.mjs --platform win --arch x64 --output-dir "$env:RUNNER_TEMP/SVI 产品 smoke"
+      - name: Smoke actual product background launch and second instance
+        shell: pwsh
+        run: ./desktop/native/windows/scripts/product-package-smoke.ps1 -PackageDir "$env:RUNNER_TEMP/SVI 产品 smoke" -EvidenceFile "$env:SVI_PROBE_EVIDENCE/product-package.json"
+      - name: Preserve the development installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-v002-development-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/SVI 产品 smoke/SmartVoiceInput-*.exe
+            ${{ runner.temp }}/SVI 产品 smoke/manifest-*.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve all results including failures
         if: always()
         uses: actions/upload-artifact@v4

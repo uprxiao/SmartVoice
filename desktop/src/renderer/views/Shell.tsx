@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
+import { runInAction } from 'mobx';
 import { BookOpen, History, Home, LogOut, Settings } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { stores } from '../stores';
@@ -25,6 +26,11 @@ export const Shell = observer(function Shell() {
     return saved === 'history' || saved === 'dictionary' ? saved : 'home';
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (!auth.permissionsGuidePending || !ui.appInfo) return;
+    if (ui.appInfo.platform === 'win32' && ui.appInfo.microphone.status !== 'granted') setSettingsOpen(true);
+    runInAction(() => { auth.permissionsGuidePending = false; });
+  }, [auth.permissionsGuidePending, ui.appInfo]);
 
   useEffect(() => {
     localStorage.setItem('svi.route', route);

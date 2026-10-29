@@ -61,7 +61,7 @@ function MiniMetric({ value, unit, label }: { value: string; unit: string; label
 
 export const HomeView = observer(function HomeView({ onNavigate }: { onNavigate: (route: Route) => void }) {
   const { session, stats, history, auth, ui } = stores;
-  const shortcut = friendlyShortcut(ui.localShortcut);
+  const shortcut = friendlyShortcut(ui.localShortcut, ui.appInfo?.platform);
   const locale = (auth.settings?.locale ?? 'zh-CN') as Locale;
   const statsReady = !stats.loading && !stats.error && stats.stats !== null;
   const daily = statsReady ? stats.stats?.daily ?? [] : [];
@@ -164,7 +164,7 @@ export const HomeView = observer(function HomeView({ onNavigate }: { onNavigate:
               <span className="text-[24px] font-[590] leading-7 tabular-nums">{statsReady ? formatNumber(stats.stats?.cumulative_learning_events ?? 0) : '—'}</span>
               <span className="text-[12px]">{tr(locale, 'home.learning.countUnit')}</span>
             </div>
-            <p className="mt-2 text-[14px] text-[var(--text-3)]">{tr(locale, 'home.learning.continuing')}</p>
+            <p className="mt-2 text-[14px] text-[var(--text-3)]">{tr(locale, !ui.appInfo ? 'windows.checking' : ui.appInfo.correctionObservationSupported === false ? 'windows.learning.hint' : 'home.learning.continuing')}</p>
             <button className="btn-secondary mt-4 h-[26px] text-[12px]" onClick={() => onNavigate('dictionary')}>{tr(locale, 'home.learning.openDictionary')}</button>
           </div>
           <div className="flex aspect-square w-[42%] max-w-[210px] shrink-0 items-center justify-center rounded-full border-[12px] border-[var(--surface)] bg-[var(--fill)] text-center">
@@ -303,8 +303,8 @@ export const HomeView = observer(function HomeView({ onNavigate }: { onNavigate:
                   </button>
                 </details>
               )}
-              {session.outcome && session.outcome.status !== 'inserted' && (
-                <div className="mt-2 text-[13px] text-[var(--text-3)]">{session.outcome.message}</div>
+              {session.outcome && (session.outcome.status !== 'inserted' || session.outcome.warning) && (
+                <div className="mt-2 text-[13px] text-[var(--text-3)]">{session.outcome.warning || session.outcome.message}</div>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
@@ -426,12 +426,12 @@ export const HomeView = observer(function HomeView({ onNavigate }: { onNavigate:
         <div className="rounded-[16px] bg-[var(--home-side-card)] p-4">
           <div className="text-[12px] text-[var(--text-2)]">{tr(locale, 'home.learning')}</div>
           <div className="mt-1 text-[13px] text-[var(--text)]">
-            {auth.settings?.learning_enabled
+            {!ui.appInfo ? tr(locale, 'windows.checking') : ui.appInfo.correctionObservationSupported === false ? tr(locale, 'windows.learning.unavailable') : auth.settings?.learning_enabled
               ? tr(locale, 'home.learningOn')
               : tr(locale, 'home.learningOff')}
           </div>
           <div className="mt-1 text-[11px] leading-4 text-[var(--text-3)]">
-            {tr(locale, 'home.side.learningHint')}
+            {tr(locale, !ui.appInfo ? 'windows.checking' : ui.appInfo.correctionObservationSupported === false ? 'windows.learning.hint' : 'home.side.learningHint')}
           </div>
         </div>
 

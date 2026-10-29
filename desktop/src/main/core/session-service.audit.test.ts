@@ -96,8 +96,8 @@ function fixture() {
   all.push(value);
   return value;
 }
-async function streaming(f: ReturnType<typeof fixture>): Promise<Socket> {
-  const started = f.service.start(false);
+async function streaming(f: ReturnType<typeof fixture>, learning = false): Promise<Socket> {
+  const started = f.service.start(learning);
   await flush();
   const ws = doubles.sockets.at(-1) as Socket;
   expect(ws).toBeDefined();
@@ -1154,4 +1154,27 @@ describe('cloud retry observation window', () => {
     expect(f.service.current().result).toBeNull();
     expect(f.api.claimInsertion).not.toHaveBeenCalled();
   });
+});
+
+it('Windows disables observation per session while strict inserted/observable and account preference remain intact', async () => {
+  const f=fixture();f.setLearning(true);Object.defineProperty(f.native,'supportsObservation',{value:false});
+  f.api.createSession.mockResolvedValueOnce(session({learning_enabled:true}));
+  const ws=await streaming(f,true);
+  expect(f.api.createSession).toHaveBeenCalledWith(expect.any(String),false);
+  f.service.sendAudio(new ArrayBuffer(8000),SESSION,doubles.now);ws.message({type:'audio.ack',seq:0,total_samples:4000});
+  const finished=f.service.finish();ws.message({type:'result.ready',session_id:SESSION,attempt_no:1,result:RESULT_VALUE});await finished;await flush();
+  const original=f.native.call.getMockImplementation()!;
+  f.native.call.mockImplementation(async(action,body)=>action==='insertCurrent'?{status:'inserted',effect:'written',observable:true,target:'windows-target'}:original(action,body));
+  const outcome=await f.service.insert(false,false);await flush();
+  expect(outcome).toMatchObject({status:'inserted',observable:true});expect(f.auth.learningEnabled).toBe(true);
+  expect(f.native.call.mock.calls.some(([action])=>action==='observe')).toBe(false);
+  expect(f.native.call).toHaveBeenCalledWith('release',{target:'windows-target'});
+});
+
+it('preserves a native clipboard cleanup warning independently of an inserted receipt', async () => {
+  const f=fixture();await ready(f);const original=f.native.call.getMockImplementation()!;
+  f.native.call.mockImplementation(async(action,body)=>action==='insertCurrent'?{status:'inserted',effect:'written',observable:true,target:'native-target',warning:'剪贴板恢复失败，请检查剪贴板；本次不会再次输入'}:original(action,body));
+  const outcome=await f.service.insert(false,false);await flush();
+  expect(outcome).toMatchObject({status:'inserted',observable:true,warning:'剪贴板恢复失败，请检查剪贴板；本次不会再次输入'});
+  expect(f.api.insertionReceipt).toHaveBeenCalledWith(SESSION,outcome.insertion_id,{status:'inserted',observable:true,error_code:null});
 });

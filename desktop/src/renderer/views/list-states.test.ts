@@ -12,7 +12,7 @@ const view = vi.hoisted(() => ({
   session: { phase: 'idle', result: null as SessionResult | null, busy: false, retryAvailable: false,
     insertionAvailable: false, targetError: null, targetApp: null, outcome: null, error: null },
   auth: { settings: { locale: 'zh-CN' as 'zh-CN' | 'en', learning_enabled: false } },
-  ui: { localShortcut: 'CommandOrControl+Alt+Shift+F19' },
+  ui: { localShortcut: 'CommandOrControl+Alt+Shift+F19', appInfo: { platform: 'darwin', correctionObservationSupported: true } },
 }));
 vi.mock('../stores', () => ({ stores: view }));
 vi.mock('../components/RetentionControl', () => ({ RetentionControl: () => null }));

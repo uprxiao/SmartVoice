@@ -14,7 +14,8 @@ export function watchAppInfo(read: () => Promise<AppInfo>, publish: (info: AppIn
     inFlight = true;
     void read().then(info => {
       if (disposed || current !== revision) return;
-      pollMissingPermission = info.accessibilitySupported && !info.accessibilityTrusted;
+      pollMissingPermission = (info.accessibilitySupported && !info.accessibilityTrusted)
+        || (info.platform === 'win32' && (info.microphone.status !== 'granted' || info.autoStart.error || info.autoStart.systemDisabled));
       publish(info);
     }).catch(() => {
       if (!disposed && current === revision) publish(null);

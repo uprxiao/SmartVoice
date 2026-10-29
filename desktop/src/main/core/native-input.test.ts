@@ -177,7 +177,7 @@ describe('Windows product helper', () => {
     Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
     expect(bridge.supportsObservation).toBe(false);
     const permission = bridge.call('permission');
-    expect(mocks.spawn).toHaveBeenCalledWith(expect.stringMatching(/voice\/smartvoiceinput-input\.exe$/),
+    expect(mocks.spawn).toHaveBeenCalledWith(expect.stringMatching(/[\\/]voice[\\/]smartvoiceinput-input\.exe$/),
       ['--parent-pid', String(process.pid)], expect.objectContaining({ windowsHide: true }));
     reply(children[0], { supported: true, trusted: true, observationSupported: false });
     expect(await permission).toMatchObject({ supported: true, trusted: true });

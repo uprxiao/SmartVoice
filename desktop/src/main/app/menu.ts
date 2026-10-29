@@ -3,6 +3,7 @@ import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 export function buildAppMenu(): void {
   const isMac = process.platform === 'darwin';
   const template: MenuItemConstructorOptions[] = [
+    ...(!isMac ? [{ label: app.name, submenu: [{ role: 'quit' as const }] }] : []),
     ...(isMac
       ? [
           {

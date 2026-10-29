@@ -6,7 +6,7 @@ import { API_BASE_URL } from '@shared/config';
 import { stores } from '../stores';
 
 export const AuthView = observer(function AuthView() {
-  const { auth } = stores;
+  const { auth, ui } = stores;
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -157,7 +157,7 @@ export const AuthView = observer(function AuthView() {
             </div>
           </div>
           <div className="absolute bottom-8 left-[64px] right-[64px] flex items-center justify-between text-[11px] text-[var(--text-disabled)]">
-            <span>v0.0.1 · 自托管服务</span>
+            <span>{ui.appInfo?.version ? `v${ui.appInfo.version}` : '—'} · 自托管服务</span>
             <span>{API_BASE_URL.replace(/^https?:\/\//, '')}</span>
           </div>
         </div>

@@ -37,6 +37,12 @@ describe('Accessibility hint when recording starts',()=>{
 });
 
 describe('automatic insertion failure is surfaced on the HUD',()=>{
+  it('Windows administrator denial preserves the platform reason without an AX action',async()=>{
+    Object.defineProperty(process,'platform',{...platform,value:'win32'});
+    const f=fixture(true,{status:'failed',error_code:'PERMISSION_DENIED',message:'目标窗口以管理员运行'});
+    await f.router.session.insert('session-a',false,false);
+    expect(f.notifyHud).toHaveBeenCalledWith({kind:'insert-failed',permission:false,message:'目标窗口以管理员运行',locale:'zh-CN'});
+  });
   it('permission zero-write shows the failure card with the settings action',async()=>{
     const f=fixture(true,{status:'failed',error_code:'PERMISSION_DENIED',message:'外部输入需要辅助功能权限'});
     await f.router.session.insert('session-a',false,false);

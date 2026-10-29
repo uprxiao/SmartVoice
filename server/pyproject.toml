@@ -1,6 +1,6 @@
 [project]
 name = "smartvoiceinput-server"
-version = "0.0.1"
+version = "0.0.2"
 description = "SmartVoiceInput local/remote dictation service"
 requires-python = ">=3.11,<3.14"
 dependencies = [

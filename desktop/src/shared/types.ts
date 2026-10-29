@@ -198,6 +198,8 @@ export interface SessionStartResult {
 }
 
 export interface InsertionOutcome {
+  /** Local-only cleanup warning, independent of the target insertion effect. */
+  warning?: string;
   status: 'inserted' | 'failed' | 'unverified' | 'unavailable';
   observable: boolean;
   error_code: string | null;
@@ -206,17 +208,31 @@ export interface InsertionOutcome {
   review_required: boolean;
 }
 
+export interface AutoStartInfo {
+  supported: boolean;
+  configurable: boolean;
+  registered: boolean;
+  enabled: boolean;
+  systemDisabled: boolean;
+  error: boolean;
+}
 export interface AppInfo {
   version: string;
   electron: string;
   platform: NodeJS.Platform;
   accessibilityTrusted: boolean;
   accessibilitySupported: boolean;
+  nativeInputSupported: boolean;
+  correctionObservationSupported: boolean;
+  microphone: { status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'; error: boolean };
+  autoStart: AutoStartInfo;
   apiBaseUrl: string;
   shortcut: string;
 }
 
 export interface SessionProgress {
+  /** Main-local presentation language, never a server/audio protocol field. */
+  locale?: 'zh-CN' | 'en';
   acknowledged_samples: number;
   session_id: string | null;
   attempt_no: number | null;

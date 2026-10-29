@@ -26,7 +26,7 @@ const mac = [...common, ...[...editingKeys, 'H', 'M', 'P', 'T'].map(key => `Comm
   'Command+Shift+Z', 'Command+Shift+3', 'Command+Shift+4', 'Command+Shift+5',
   'Control+Space', 'Control+Shift+Space'];
 const windows = [...common, 'Control+P', 'Control+T', 'Super+L', 'Super+D', 'Super+E',
-  'Super+R', 'Super+Space', 'Control+Alt+Delete'];
+  'Super+R', 'Super+Space', 'Control+Alt+Delete', 'Shift+Space', 'Control+Space'];
 const reserved = {
   darwin: new Set(mac.map(key => shortcutSignature(key, 'darwin'))),
   win32: new Set(windows.map(key => shortcutSignature(key, 'win32'))),

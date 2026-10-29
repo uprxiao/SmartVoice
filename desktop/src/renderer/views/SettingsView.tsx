@@ -60,10 +60,12 @@ function healthReason(locale: Locale, reason: string): string {
 function ShortcutRecorder({
   value,
   locale,
+  platform,
   onApply,
 }: {
   value: string;
   locale: Locale;
+  platform: NodeJS.Platform;
   onApply: (next: string) => Promise<void>;
 }) {
   const [recording, setRecording] = useState(false);
@@ -78,7 +80,7 @@ function ShortcutRecorder({
         setRecording(false);
         return;
       }
-      const accelerator = acceleratorFromKeyEvent(event);
+      const accelerator = acceleratorFromKeyEvent(event, platform);
       if (!accelerator) return;
       setRecording(false);
       setBusy(true);
@@ -88,7 +90,7 @@ function ShortcutRecorder({
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [recording, onApply]);
+  }, [recording, onApply, platform]);
 
   return (
     <button
@@ -106,7 +108,7 @@ function ShortcutRecorder({
           ? tr(locale, 'settings.shortcut.saving')
           : recording
             ? tr(locale, 'settings.shortcut.recording')
-            : friendlyShortcut(value)}
+            : friendlyShortcut(value, platform)}
       </span>
       {busy ? <Loader2 size={13} className="animate-spin" /> : <Keyboard size={14} className="text-[var(--text-3)]" />}
     </button>
@@ -215,6 +217,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
   const [section, setSection] = useState<SectionKey>('settings');
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [platformChecking, setPlatformChecking] = useState(true);
   const shortcut = ui.localShortcut ?? '';
   const [savingShortcut, setSavingShortcut] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
@@ -224,7 +227,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
   const refreshInfo = useRef<() => void>(() => undefined);
 
   useEffect(() => {
-    const watcher = watchAppInfo(() => ui.loadAppInfo(), setInfo);
+    const watcher = watchAppInfo(() => ui.loadAppInfo(), value => { setInfo(value); setPlatformChecking(false); });
     refreshInfo.current = watcher.refresh;
     return () => { refreshInfo.current = () => undefined; watcher.stop(); };
   }, [ui]);
@@ -252,6 +255,12 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
 
   const settings = auth.settings;
   const locale = (settings?.locale ?? 'zh-CN') as Locale;
+  const isWindows = info?.platform === 'win32';
+  const observationUnsupported = info?.correctionObservationSupported === false;
+  const autoStart = ui.appInfo?.autoStart;
+  const openSystem = async (action: () => Promise<unknown>) => {
+    try { await action(); } catch { ui.toast(tr(locale, 'windows.settingsFailed'), 'error'); }
+  };
   const dateLocale = locale === 'en' ? 'en-US' : 'zh-CN';
   const apply = async (patch: {
     learning_enabled?: boolean;
@@ -272,7 +281,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
   const applyShortcut = async (next: string) => {
     try {
       const applied = await ui.updateShortcut(next);
-      ui.toast(tr(locale, 'settings.shortcut.updated', { value: friendlyShortcut(applied) }));
+      ui.toast(tr(locale, 'settings.shortcut.updated', { value: friendlyShortcut(applied, ui.appInfo?.platform) }));
     } catch (error) {
       ui.toast(errorMessage(error) || tr(locale, 'settings.shortcut.saveFailed'), 'error');
       throw error;
@@ -392,8 +401,29 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                     label={tr(locale, 'settings.shortcut.label')}
                     hint={tr(locale, 'settings.shortcut.hint')}
                   >
-                    <ShortcutRecorder value={shortcut} locale={locale} onApply={applyShortcut} />
+                    <ShortcutRecorder value={shortcut} locale={locale} platform={ui.appInfo?.platform ?? 'darwin'} onApply={applyShortcut} />
                   </Row>
+                  {isWindows && <Row label={tr(locale, 'windows.startup.label')} hint={tr(locale, 'windows.startup.hint')}>
+                    <div className="flex flex-col items-end gap-2">
+                      <button role="switch" aria-label={tr(locale, 'windows.startup.label')}
+                        aria-checked={autoStart?.registered ?? false}
+                        disabled={!autoStart?.configurable || autoStart.error || ui.autoStartBusy}
+                        className={`relative h-[22px] w-[38px] rounded-full transition ${autoStart?.registered ? 'bg-[var(--accent)]' : 'bg-[var(--track)]'}`}
+                        onClick={async () => {
+                          try { await ui.updateAutoStart(!autoStart?.registered); ui.toast(tr(locale, 'settings.saved')); }
+                          catch (error) { ui.toast(tr(locale, `windows.${errorMessage(error)}`), 'error'); }
+                        }}>
+                        <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-[var(--thumb)] shadow transition-all ${autoStart?.registered ? 'left-[18px]' : 'left-[2px]'}`} />
+                      </button>
+                      {ui.autoStartBusy && <span role="status">{tr(locale, 'settings.shortcut.saving')}</span>}
+                      <span className="text-[12px] text-[var(--text-3)]">{tr(locale, !autoStart?.configurable ? 'windows.startup.development'
+                        : autoStart.error ? 'windows.checkError' : autoStart.systemDisabled ? 'windows.startup.blocked'
+                        : autoStart.enabled ? 'windows.startup.enabled' : 'windows.startup.disabled')}</span>
+                      {autoStart?.systemDisabled && <button className="btn-ghost" onClick={() => void openSystem(rpc.app.openStartupSettings)}>{tr(locale, 'windows.startup.open')}</button>}
+                      {autoStart?.error && <button className="btn-ghost" onClick={() => refreshInfo.current()}>{tr(locale, 'windows.recheck')}</button>}
+                    </div>
+                  </Row>}
+
                 </Group>
 
                 <Group title={tr(locale, 'settings.language.group')} icon={<Globe2 size={15} />}>
@@ -418,9 +448,9 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                 <Group title={tr(locale, 'settings.learning.group')} icon={<ShieldCheck size={15} />}>
                   <Row
                     label={tr(locale, 'settings.learning.label')}
-                    hint={tr(locale, 'settings.learning.hint')}
+                    hint={tr(locale, observationUnsupported ? 'windows.learning.hint' : 'settings.learning.hint')}
                   >
-                    <button
+                    {observationUnsupported || !info ? <span className="pill">{tr(locale, !info ? 'windows.checking' : 'windows.learning.unavailable')}</span> : <button
                       role="switch"
                       aria-checked={settings?.learning_enabled ?? false}
                       disabled={!settings || busy}
@@ -434,7 +464,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                           settings?.learning_enabled ? 'left-[18px]' : 'left-[2px]'
                         }`}
                       />
-                    </button>
+                    </button>}
                   </Row>
                   <div className="mt-2 border-t border-[var(--border-thin)] pt-2">
                     <Row
@@ -451,7 +481,16 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                 </Group>
 
                 <Group title={tr(locale, 'settings.permissions.group')} icon={<Accessibility size={15} />}>
-                  <div className="flex items-start gap-3">
+                  <Row label={tr(locale, 'windows.microphone.label')} hint={tr(locale, isWindows ? 'windows.microphone.hint' : 'windows.microphone.macHint')}>
+                    <div className="flex max-w-[290px] flex-wrap justify-end gap-2">
+                      <span className={`pill ${info?.microphone.status === 'granted' ? 'accent' : 'warn'}`} role="status">{tr(locale, platformChecking ? 'windows.checking' : info?.microphone.error ? 'windows.checkError'
+                        : `windows.microphone.${info?.microphone.status ?? 'unknown'}`)}</span>
+                      <button className="btn-ghost" disabled={platformChecking} onClick={() => { setPlatformChecking(true); refreshInfo.current(); }}>{tr(locale, 'windows.recheck')}</button>
+                      <button className="btn-secondary" onClick={() => void openSystem(rpc.app.openMicrophoneSettings)}>{tr(locale, 'windows.microphone.open')}</button>
+                    </div>
+                  </Row>
+                  {isWindows && <Row label={tr(locale, 'windows.input.label')} hint={tr(locale, 'windows.input.hint')}><span className="pill">{tr(locale, info?.nativeInputSupported ? 'windows.input.ordinary' : 'windows.input.unavailable')}</span></Row>}
+                  {info?.platform === 'darwin' && <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-strong)]">
                       <Accessibility size={16} className="text-[var(--text-3)]" />
                     </div>
@@ -494,7 +533,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </div>}
                 </Group>
 
                 <SettingsServiceHealth locale={locale} apiBaseUrl={info?.apiBaseUrl ?? null}
@@ -540,7 +579,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                       {info?.apiBaseUrl ?? API_BASE_URL}
                     </span>
                   </div>
-                  <div className="col-span-2 flex items-center gap-2 rounded-lg bg-[var(--surface-strong)] px-3 py-2 text-[var(--text-3)]">
+                  {info?.platform === 'darwin' && <div className="col-span-2 flex items-center gap-2 rounded-lg bg-[var(--surface-strong)] px-3 py-2 text-[var(--text-3)]">
                     {tr(locale, 'settings.permissions.label')}
                     <span className="ml-auto flex items-center gap-1 text-[var(--text)]">
                       {info?.accessibilityTrusted ? <Check size={13} /> : null}
@@ -548,7 +587,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                         ? tr(locale, 'settings.permissions.trusted')
                         : tr(locale, 'settings.permissions.missing')}
                     </span>
-                  </div>
+                  </div>}
                 </div>
               </Group>
             )}
@@ -556,22 +595,23 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
             {section === 'help' && (
               <Group title={tr(locale, 'settings.help.group')} icon={<HelpCircle size={15} />}>
                 <Row
-                  label={tr(locale, 'settings.help.permissions.title')}
-                  hint={tr(locale, 'settings.help.permissions.hint')}
+                  label={tr(locale, info?.platform === 'darwin' ? 'settings.help.permissions.title' : 'windows.input.label')}
+                  hint={tr(locale, info?.platform === 'darwin' ? 'settings.help.permissions.hint' : 'windows.input.hint')}
                 >
                   <button
                     className="btn-secondary"
-                    onClick={() => void rpc.app.openAccessibilitySettings()}
+                    onClick={() => void openSystem(info?.platform === 'darwin' ? rpc.app.openAccessibilitySettings : rpc.app.openMicrophoneSettings)}
                   >
-                    {tr(locale, 'settings.permissions.open')} <ExternalLink size={12} />
+                    {tr(locale, info?.platform === 'darwin' ? 'settings.permissions.open' : 'windows.microphone.open')} <ExternalLink size={12} />
                   </button>
                 </Row>
                 <Row
                   label={tr(locale, 'settings.help.shortcut.title')}
                   hint={tr(locale, 'settings.help.shortcut.hint')}
                 >
-                  <span className="pill">{friendlyShortcut(shortcut)}</span>
+                  <span className="pill">{friendlyShortcut(shortcut, ui.appInfo?.platform)}</span>
                 </Row>
+                {isWindows && <Row label={tr(locale, 'windows.install.label')} hint={tr(locale, 'windows.install.hint')}><span /></Row>}
                 <Row
                   label={tr(locale, 'settings.help.recovery.title')}
                   hint={tr(locale, 'settings.help.recovery.hint')}

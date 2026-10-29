@@ -23,7 +23,7 @@
 | S1 正式需求修订 | 已整理并复核 | [WIN-01～12](02-prd/windows-v002-requirements.md)与 PRD/BR-07/11 对齐；需求用户评审依据为本人已确认的范围与 Q1–Q7，本次不追加 Windows 修改观察 |
 | S2 Windows 技术设计 | 已整理并复核 | [技术设计](03-architecture/windows-v002-design.md)对齐实际扁平 JSONL、一次执行、平台能力、生命周期、坐标与三端责任；S0 首次关闭确认时序同步复核 |
 | S3 Windows 测试用例 | 已生成并复核 | [40 条专项用例](04-test/test-cases-windows-v002.md)覆盖 12/12 WIN，数据、独立参数与 L1/L2/L3 判据完整；物理键盘/安装包/真实闭环要求保留 |
-| S4 正式开发 | 进行中 | S3 复核后登记；Desktop 正式 helper、桥、平台 UI、托盘/自启/坐标与打包；Server 真实契约/租户/统计回归；Admin 构建/状态及相同服务联调。见 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
+| S4 正式开发 | 进行中 | 正式 helper 已接入，Windows 实际产品动作 17/17 参数通过（[运行](https://github.com/uprxiao/SmartVoice/actions/runs/40867930370)）；平台 UI/托盘/自启/坐标代码与本地回归已完成，正式包构建/启动验证待执行。Server 真实 PostgreSQL/HTTP 21项、Admin 构建/93项回归通过；S5 未执行。见 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
 | S5 真机验收 | 未开始 | Windows x64 自测；V-04 物理按键及 V-05/06/11/12/13/15 和目标安装包均须留证 |
 
 ## 文档

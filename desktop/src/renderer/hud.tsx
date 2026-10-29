@@ -15,6 +15,7 @@ function Hud() {
   const [now, setNow] = useState(() => performance.now());
   const [level, setLevel] = useState(0);
   const [notice, setNotice] = useState<HudNotice | null>(null);
+  const [locale, setLocale] = useState<'zh-CN' | 'en'>('zh-CN');
   const presentationRef = useRef(EMPTY_HUD);
   const progressRef = useRef<SessionProgress | null>(null);
 
@@ -23,6 +24,7 @@ function Hud() {
       if (progressRef.current && next.revision < progressRef.current.revision) return;
       const time = performance.now();
       progressRef.current = next;
+      if (next.locale) setLocale(next.locale);
       const view = advanceHud(presentationRef.current, next, time);
       presentationRef.current = view;
       setPresentation(view);
@@ -49,7 +51,7 @@ function Hud() {
     return () => clearInterval(timer);
   }, [presentation.phase, presentation.completedAt]);
 
-  return <HudView frame={hudFrame(presentation, now)} level={level} notice={notice}
+  return <HudView frame={hudFrame(presentation, now)} level={level} notice={notice} locale={notice?.locale ?? locale}
     onCancel={() => events.emit(hudCancelEvent, null)}
     onConfirm={() => events.emit(hudConfirmEvent, null)}
     onCopy={() => events.emit(hudCopyEvent, null)}

@@ -1,6 +1,6 @@
 {
   "name": "smartvoiceinput-desktop",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "SmartVoiceInput 桌面语音输入",
   "author": "SmartVoiceInput",
@@ -52,6 +52,9 @@
     "zod": "^4.6.7"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   }
 }

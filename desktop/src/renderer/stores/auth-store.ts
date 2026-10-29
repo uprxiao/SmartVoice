@@ -8,6 +8,7 @@ export class AuthStore {
   booting = true;
   busy = false;
   error: string | null = null;
+  permissionsGuidePending = false;
   private actionEpoch = 0;
   private bootVersion = 0;
 
@@ -46,7 +47,7 @@ export class AuthStore {
     try {
       const snapshot = await rpc.auth.login(email, password);
       runInAction(() => {
-        if (epoch === this.actionEpoch) this.snapshot = snapshot;
+        if (epoch === this.actionEpoch) { this.snapshot = snapshot; this.permissionsGuidePending = true; }
       });
     } catch (error) {
       runInAction(() => {
@@ -69,7 +70,7 @@ export class AuthStore {
     try {
       const snapshot = await rpc.auth.register(email, password);
       runInAction(() => {
-        if (epoch === this.actionEpoch) this.snapshot = snapshot;
+        if (epoch === this.actionEpoch) { this.snapshot = snapshot; this.permissionsGuidePending = true; }
       });
     } catch (error) {
       runInAction(() => {
@@ -84,6 +85,7 @@ export class AuthStore {
   }
 
   async logout(): Promise<void> {
+    this.permissionsGuidePending = false;
     const epoch = ++this.actionEpoch;
     this.bootVersion++;
     this.snapshot = null;

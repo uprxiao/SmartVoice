@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, powerMonitor, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor, screen, shell } from 'electron';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { API_BASE_URL, SERVICE_CA_SHA256 } from '@shared/config';
@@ -21,7 +21,9 @@ import { createEventEmitter } from '@shared/ipc/events';
 import { registerRPCRouter } from '@shared/ipc/rpc';
 import { buildAppMenu } from './app/menu';
 import { HudVisibility } from './app/hud-visibility';
-import { HudPosition } from './app/hud-position';
+import { HudPosition, inputRectangle } from './app/hud-position';
+import { WindowsTray } from './app/windows-tray';
+import { inputGeometryToDip } from '../../native/input-geometry';
 import {
   createHudWindow,
   createMainWindow,
@@ -46,15 +48,14 @@ app.setName('SmartVoiceInput');
 if (process.env.SVI_USER_DATA) app.setPath('userData', process.env.SVI_USER_DATA);
 
 const gotLock = app.requestSingleInstanceLock();
+let showRequested = false;
+let showMain: (() => Promise<void>) | null = null;
 if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    const win = getMainWindow();
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.show();
-    }
+    showRequested = true;
+    void showMain?.();
   });
 }
 
@@ -93,18 +94,22 @@ async function main(): Promise<void> {
   let auth!: AuthService;
   let sessions: SessionService | null = null;
   let accountId: string | null = null;
+  let tray: WindowsTray | null = null;
+  let quitting = false;
   const native = new NativeVoiceInput();
   // Geometry cannot queue in front of an insertion or consume its helper's targets.
   const hudNative = new NativeVoiceInput();
   let nextHudPermissionCheck = 0;
+  const toDip = (geometry: Record<string, unknown>) => inputGeometryToDip(geometry, inputRectangle(geometry),
+    process.platform, rect => screen.screenToDipRect(null, rect));
   const hudPosition = new HudPosition(screen, async () => {
     const geometry = await hudNative.call('inputBounds');
     if (geometry.available !== true && Date.now() >= nextHudPermissionCheck) {
       nextHudPermissionCheck = Date.now() + 1500;
       const permission = await hudNative.call('permission', { prompt: false });
-      if (permission.trusted) return hudNative.call('inputBounds');
+      if (permission.trusted) return toDip(await hudNative.call('inputBounds'));
     }
-    return geometry;
+    return toDip(geometry);
   },
     bounds => getHudWindow()?.setBounds(bounds, false), showHud);
   const hudVisibility = new HudVisibility(() => hudPosition.start(), () => {
@@ -136,6 +141,7 @@ async function main(): Promise<void> {
         });
       }
     }
+    tray?.refreshMenu();
     events.emit({ name: 'auth.changed' }, null);
   });
   const journal = new InsertionJournal(join(app.getPath('userData'), 'insertion-marks', serverKey));
@@ -194,7 +200,7 @@ async function main(): Promise<void> {
     hudVisibility.dismiss();
   });
   ipcMain.on('hud.open-accessibility', event => {
-    if (!hudSender(event)) return;
+    if (!hudSender(event) || process.platform !== 'darwin') return;
     void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
     hudVisibility.dismiss();
   });
@@ -208,10 +214,6 @@ async function main(): Promise<void> {
   });
   debug('ipc');
 
-  const win = await createMainWindow();
-  debug('main-window');
-  await createHudWindow();
-  debug('hud-window');
   const interrupt = () => {
     if (sessionService.isBusy() && ['created', 'streaming', 'finalizing', 'refining'].includes(sessionService.status.state)) {
       void sessionService.cancel().catch(() => sessionService.reset());
@@ -220,8 +222,46 @@ async function main(): Promise<void> {
     hudNative.invalidate();
     hudVisibility.reset();
   };
+  const boundWindows = new WeakSet<BrowserWindow>();
+  const background = process.platform === 'win32' && process.argv.includes('--background');
+  const ensureMain = async () => {
+    const win = await createMainWindow({ hidden: background && !showRequested && Boolean(tray),
+      ...(process.platform === 'win32' ? { closeToTray: (window: BrowserWindow) => { if (tray) void tray.close(window); else window.show(); } } : {}) });
+    if (!boundWindows.has(win)) {
+      boundWindows.add(win);
+      win.webContents.on('render-process-gone', interrupt);
+      win.on('closed', interrupt);
+    }
+    return win;
+  };
+  showMain = async () => {
+    if (quitting) return;
+    try {
+      const win = await ensureMain();
+      if (quitting || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show(); win.focus();
+      tray?.refreshMenu();
+    } catch {
+      if (!quitting) await dialog.showMessageBox({ type: 'error', title: 'SmartVoiceInput',
+        message: auth.current?.settings.locale === 'en' ? 'Could not open the main window. Try again from the tray or exit the app.' : '无法打开主窗口，请从托盘重试或退出应用。' });
+    }
+  };
+  if (process.platform === 'win32') {
+    try { tray = new WindowsTray(resolveAppResource('icon.png'), showMain, () => auth.current?.settings.locale ?? 'zh-CN'); }
+    catch {
+      // Initial window remains visible and the application menu has an Exit command.
+      void dialog.showMessageBox({ type: 'error', title: 'SmartVoiceInput', message: auth.current?.settings.locale === 'en'
+        ? 'The tray could not be created. Keep the window open or exit from the application menu.'
+        : '托盘创建失败，请保留主窗口，或从应用菜单退出。' });
+    }
+  }
+  await ensureMain();
+  if (showRequested) await showMain();
+  debug('main-window');
+  await createHudWindow();
+  debug('hud-window');
   powerMonitor.on('suspend', interrupt);
-  win.webContents.on('render-process-gone', interrupt);
   shortcuts.setCallback(() => {
     // Toggle capture without changing the main window's visibility or
     // minimized state. The non-activating HUD owns recording feedback.
@@ -229,11 +269,14 @@ async function main(): Promise<void> {
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createMainWindow();
-    else getMainWindow()?.show();
+    showRequested = true;
+    void showMain?.();
   });
   app.on('before-quit', () => {
+    quitting = true;
     markAppQuitting();
+    tray?.dispose();
+    showMain = null;
     hudVisibility.reset();
     shortcuts.dispose();
     powerMonitor.off('suspend', interrupt);

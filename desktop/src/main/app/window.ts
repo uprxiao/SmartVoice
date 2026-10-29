@@ -5,6 +5,8 @@ import { hudWindowPlatformOptions } from '../../../native/hud-window-policy';
 let mainWindow: BrowserWindow | null = null;
 let hudWindow: BrowserWindow | null = null;
 let appQuitting = false;
+let mainCreation: Promise<BrowserWindow> | null = null;
+type MainWindowOptions = { hidden?: boolean; closeToTray?: (win: BrowserWindow) => void };
 
 export function resolveAppResource(name: string): string {
   return app.isPackaged
@@ -86,7 +88,15 @@ export function hideHud(): void {
   if (win) win.hide();
 }
 
-export async function createMainWindow(): Promise<BrowserWindow> {
+export function createMainWindow(options: MainWindowOptions = {}): Promise<BrowserWindow> {
+  if (mainCreation) return mainCreation;
+  const existing = getMainWindow();
+  if (existing) return Promise.resolve(existing);
+  mainCreation = loadMainWindow(options).finally(() => { mainCreation = null; });
+  return mainCreation;
+}
+
+async function loadMainWindow(options: MainWindowOptions): Promise<BrowserWindow> {
   const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
     width: 1080,
@@ -114,17 +124,24 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   });
   mainWindow = win;
   win.on('close', (event) => {
-    if (appQuitting || !isMac) return;
+    if (appQuitting || (!isMac && !options.closeToTray)) return;
     event.preventDefault();
-    win.hide();
+    if (options.closeToTray) options.closeToTray(win);
+    else win.hide();
   });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
   win.once('ready-to-show', () => {
-    if (process.env.SVI_HIDDEN !== '1') win.show();
+    if (process.env.SVI_HIDDEN !== '1' && !options.hidden && !appQuitting) win.show();
   });
-  if (process.env.ELECTRON_RENDERER_URL) await win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else await win.loadFile(join(__dirname, '../renderer/index.html'));
+  try {
+    if (process.env.ELECTRON_RENDERER_URL) await win.loadURL(process.env.ELECTRON_RENDERER_URL);
+    else await win.loadFile(join(__dirname, '../renderer/index.html'));
+  } catch (error) {
+    if (mainWindow === win) mainWindow = null;
+    if (!win.isDestroyed()) win.destroy();
+    throw error;
+  }
   return win;
 }

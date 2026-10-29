@@ -103,10 +103,13 @@ impl Drop for Modifiers {
 struct Clip<'a> {
     snapshot: &'a clipboard::Snapshot,
     seq: u32,
+    armed: bool,
 }
 impl Drop for Clip<'_> {
     fn drop(&mut self) {
-        let _ = clipboard::restore_if_unchanged(self.snapshot, self.seq);
+        if self.armed {
+            let _ = clipboard::restore_if_unchanged(self.snapshot, self.seq);
+        }
     }
 }
 
@@ -333,84 +336,96 @@ impl Product {
             match clipboard::set_text_excluded(r.text.as_deref().unwrap_or(""), snapshot.seq) {
                 Ok(p) => p,
                 Err(e) => {
-                    if let Some(seq) = e.owned_seq {
-                        let _ = clipboard::restore_if_unchanged(&snapshot, seq);
+                    let restore_failed = e.owned_seq.is_some_and(|seq| {
+                        clipboard::restore_if_unchanged(&snapshot, seq).is_err()
+                    });
+                    let mut response = failed("ZERO_WRITE", "剪贴板已变化或不可用，本次没有输入");
+                    if restore_failed {
+                        response["warning"] =
+                            json!("剪贴板恢复失败，请检查剪贴板；本次不会再次输入");
                     }
-                    return failed("ZERO_WRITE", "剪贴板已变化或不可用，本次没有输入");
+                    return response;
                 }
             };
-        let clip = Clip {
+        let mut clip = Clip {
             snapshot: &snapshot,
             seq: publication.seq,
+            armed: true,
         };
-        // Obtain the latest position after both the modifier wait and clipboard publication.
-        if explicit && !self.validate(r.target.as_deref().unwrap_or(""), false) {
-            return failed("TARGET_CHANGED", "指定的输入位置已变化，本次没有输入");
-        }
-        let target = match self.current(false) {
-            Ok(t) => t,
-            Err(e) => return e,
-        };
-        if !clipboard::still_owned(clip.seq).unwrap_or(false) || !keys::held_modifiers().is_empty()
-        {
-            return failed("ZERO_WRITE", "写入前剪贴板或按键已变化，本次没有输入");
-        }
-        let fresh = foreground::admit_foreground();
-        if !fresh.allowed
-            || !fresh.info.is_some_and(|f| same_window(&target.window, &f))
-            || target.element.as_ref().is_some_and(|el| {
-                protected(&self.uia, el)
-                    || !self
-                        .uia
-                        .focused()
-                        .is_ok_and(|now| self.uia.same_element(el, &now))
-            })
-        {
-            return failed("TARGET_CHANGED", "写入前目标已变化，本次没有输入");
-        }
-        let expected = target
-            .before
-            .as_ref()
-            .and_then(|b| verification::expected_after(b, r.text.as_deref().unwrap_or("")));
-        // Exactly one attempt; accepted input count is deliberately not used as delivery evidence.
-        let _ = keys::send_ctrl_v();
-        drop(modifiers);
-        std::thread::sleep(Duration::from_millis(350));
-        let end = Instant::now() + Duration::from_millis(1000);
-        let matched = loop {
-            let matched = foreground::foreground().is_some_and(|f| same_window(&target.window, &f))
-                && target.element.as_ref().is_some_and(|el| {
-                    self.uia
-                        .focused()
-                        .is_ok_and(|now| self.uia.same_element(el, &now))
-                        && verification::exactly_matches(
-                            expected.as_ref(),
-                            readable(&self.uia, el).as_ref(),
-                        )
-                });
-            if matched || Instant::now() >= end {
-                break matched;
+        let mut response = (|| {
+            // Obtain the latest position after both the modifier wait and clipboard publication.
+            if explicit && !self.validate(r.target.as_deref().unwrap_or(""), false) {
+                return failed("TARGET_CHANGED", "指定的输入位置已变化，本次没有输入");
             }
-            std::thread::sleep(Duration::from_millis(75));
-        };
+            let target = match self.current(false) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if !clipboard::still_owned(clip.seq).unwrap_or(false)
+                || !keys::held_modifiers().is_empty()
+            {
+                return failed("ZERO_WRITE", "写入前剪贴板或按键已变化，本次没有输入");
+            }
+            let fresh = foreground::admit_foreground();
+            if !fresh.allowed
+                || !fresh.info.is_some_and(|f| same_window(&target.window, &f))
+                || target.element.as_ref().is_some_and(|el| {
+                    protected(&self.uia, el)
+                        || !self
+                            .uia
+                            .focused()
+                            .is_ok_and(|now| self.uia.same_element(el, &now))
+                })
+            {
+                return failed("TARGET_CHANGED", "写入前目标已变化，本次没有输入");
+            }
+            let expected = target
+                .before
+                .as_ref()
+                .and_then(|b| verification::expected_after(b, r.text.as_deref().unwrap_or("")));
+            // Exactly one attempt; accepted input count is deliberately not used as delivery evidence.
+            let _ = keys::send_ctrl_v();
+            drop(modifiers);
+            std::thread::sleep(Duration::from_millis(350));
+            let end = Instant::now() + Duration::from_millis(1000);
+            let matched = loop {
+                let matched = foreground::foreground()
+                    .is_some_and(|f| same_window(&target.window, &f))
+                    && target.element.as_ref().is_some_and(|el| {
+                        self.uia
+                            .focused()
+                            .is_ok_and(|now| self.uia.same_element(el, &now))
+                            && verification::exactly_matches(
+                                expected.as_ref(),
+                                readable(&self.uia, el).as_ref(),
+                            )
+                    });
+                if matched || Instant::now() >= end {
+                    break matched;
+                }
+                std::thread::sleep(Duration::from_millis(75));
+            };
+            let mut response = if matched {
+                json!({"status":"inserted","effect":"written","observable":true})
+            } else {
+                unverified()
+            };
+            if matched {
+                let app = format!("PID {}", target.window.pid);
+                let id = self.keep(target);
+                response["target"] = id.into();
+                response["app"] = app.into();
+            }
+            response
+        })();
         let restored = clipboard::restore_if_unchanged(&snapshot, clip.seq);
-        // Guard can safely run again: the restored/new version no longer matches this publication.
+        clip.armed = false;
         drop(clip);
-        let mut response = if matched {
-            json!({"status":"inserted","effect":"written","observable":true})
-        } else {
-            unverified()
-        };
         response["clipboardRestored"] = json!(restored.as_ref().is_ok_and(|r| *r));
         if restored.is_err() {
-            response["message"] = json!("剪贴板恢复失败，请检查剪贴板；本次不会再次输入");
+            response["warning"] = json!("剪贴板恢复失败，请检查剪贴板；本次不会再次输入");
         }
-        if matched {
-            let app = format!("PID {}", target.window.pid);
-            let id = self.keep(target);
-            response["target"] = id.into();
-            response["app"] = app.into();
-        }
+
         response
     }
 }

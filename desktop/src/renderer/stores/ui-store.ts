@@ -12,6 +12,9 @@ export class UiStore {
   toasts: ToastItem[] = [];
   // Device-local shortcut, independent of account settings. Null means not yet read.
   localShortcut: string | null = null;
+  appInfo: AppInfo | null = null;
+  autoStartBusy = false;
+  private appInfoRevision = 0;
   private shortcutRevision = 0;
   private nextId = 1;
 
@@ -21,11 +24,31 @@ export class UiStore {
 
   async loadAppInfo(): Promise<AppInfo> {
     const revision = ++this.shortcutRevision;
+    const infoRevision = ++this.appInfoRevision;
     const info = await rpc.app.info();
     runInAction(() => {
       if (revision === this.shortcutRevision) this.localShortcut = info.shortcut || null;
+      if (infoRevision === this.appInfoRevision) this.appInfo = info;
     });
     return info;
+  }
+
+  async updateAutoStart(enabled: boolean): Promise<void> {
+    if (this.autoStartBusy) return;
+    this.autoStartBusy = true;
+    const revision = ++this.appInfoRevision;
+    try {
+      const autoStart = await rpc.app.updateAutoStart(enabled);
+      runInAction(() => {
+        if (revision === this.appInfoRevision && this.appInfo) this.appInfo = { ...this.appInfo, autoStart };
+      });
+    } finally {
+      // Keep the control disabled through read-back, including failed writes/rollbacks.
+      await this.loadAppInfo().catch(() => {
+        runInAction(() => { if (this.appInfo) this.appInfo = { ...this.appInfo, autoStart: { ...this.appInfo.autoStart, error: true } }; });
+      });
+      runInAction(() => { this.autoStartBusy = false; });
+    }
   }
 
   async updateShortcut(next: string): Promise<string> {

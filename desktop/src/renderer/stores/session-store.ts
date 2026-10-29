@@ -178,9 +178,9 @@ export class SessionStore {
       if (generation !== this.generation || userId !== this.auth.user?.id) return;
       const message = this.progress.error_code === 'AUDIO_INTERRUPTED' ? this.failureMessage!
         : (error instanceof RecorderError && error.code === 'MICROPHONE_PERMISSION_DENIED') || errorMessage(error) === 'MICROPHONE_PERMISSION_DENIED'
-          ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, 'home.microphonePermissionDenied')
+          ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, this.ui.appInfo?.platform === 'win32' ? 'windows.microphone.hint' : 'home.microphonePermissionDenied')
           : errorMessage(error) === 'MICROPHONE_PERMISSION_UNAVAILABLE'
-            ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, 'home.microphonePermissionUnavailable')
+            ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, this.ui.appInfo?.platform === 'win32' ? 'windows.microphone.hint' : 'home.microphonePermissionUnavailable')
           : errorMessage(error);
       runInAction(() => { this.phase = 'failed'; this.error = message; });
       this.ui.toast(message, 'error');
@@ -286,7 +286,8 @@ export class SessionStore {
       const outcome = await rpc.session.insert(sessionId, reviewConfirmed, explicit);
       if (!this.current(generation, userId, sessionId)) return;
       runInAction(() => { this.outcome = outcome; });
-      if (outcome.status === 'inserted') this.ui.toast('已插入到目标输入框');
+      if (outcome.warning) this.ui.toast(outcome.warning, 'warning');
+      else if (outcome.status === 'inserted') this.ui.toast('已插入到目标输入框');
       else if (outcome.status === 'unverified') this.ui.toast(outcome.message || '输入状态未确认，请检查目标；不会重复输入', 'warning');
       else this.ui.toast(outcome.message || '无法插入，请复制结果', 'error');
     } catch (error) { if (this.current(generation, userId, sessionId)) this.ui.toast(errorMessage(error), 'error'); }

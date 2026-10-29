@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppInfo } from '@shared/types';
 import { watchAppInfo } from './app-info-refresh';
 const info = (trusted: boolean, supported = true): AppInfo => ({
+  nativeInputSupported:true, correctionObservationSupported:true, microphone:{status:'granted',error:false},
+  autoStart:{supported:false,configurable:false,registered:false,enabled:false,systemDisabled:false,error:false},
   version: '0.0.1', electron: '42', platform: 'darwin', shortcut: 'CommandOrControl+Shift+Space',
   apiBaseUrl: 'http://127.0.0.1:17863', accessibilityTrusted: trusted, accessibilitySupported: supported,
 });
