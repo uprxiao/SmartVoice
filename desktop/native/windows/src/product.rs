@@ -220,11 +220,28 @@ impl Product {
                 return false;
             }
             if !same_window(&target.window, &current) {
-                unsafe {
-                    let _ = SetForegroundWindow(hwnd);
+                if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
+                    return false;
                 }
-                if let Some(el) = &target.element {
-                    let _ = unsafe { el.SetFocus() };
+                // Activation crosses input queues and can briefly expose no foreground or
+                // the child Edit HWND. Let Windows restore its own last focused control;
+                // do not force a different element. Exact root/control/baseline checks follow.
+                let until = Instant::now() + Duration::from_millis(250);
+                loop {
+                    let restored = foreground::foreground()
+                        .is_some_and(|now| same_window(&target.window, &now))
+                        && target.element.as_ref().is_some_and(|captured| {
+                            self.uia
+                                .focused()
+                                .is_ok_and(|now| self.uia.same_element(captured, &now))
+                        });
+                    if !self.parent_alive() || Instant::now() > until {
+                        return false;
+                    }
+                    if restored {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
                 }
             }
         }

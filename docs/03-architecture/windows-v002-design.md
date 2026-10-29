@@ -53,6 +53,7 @@ S4 Windows 实测发现 POSIX 目录 fd 的 fsync 返回 EPERM。执行日志仍
 
 1. Main 核当前账号/会话/result/hash/review，再 claim 并持久化 started；这套既有执行日志不能由 Windows 分支绕过。Windows 不向 helper 传 token、账号凭据或输入框原有全文。
 2. helper 在有界等待修饰键释放后选取最终目标；不能把独立探针里“固定夹具 PID”的限制复制到正式通用输入。正常路径不恢复焦点；显式路径只在用户明确选择、可核验且当前仍是本应用/原目标时尝试恢复，必须读回实际前台与焦点成功，失败就保留结果。
+   显式恢复调用 Win32 激活后，最多 250ms 等待原根窗口与原焦点控件实际稳定；激活返回时可能短暂无前台，不能立即把瞬态当作持久失效。由系统恢复原焦点，不强行改到其他控件；之后仍比较原文/选区/生命周期，超时零写入。此准备包含在原 5000ms RPC 上限内。
 3. 准入核当前可见顶层应用窗口、非本应用/桌面/任务栏、可访问交互桌面、PID+进程创建时间、完整性级别。普通应用拒绝更高 IL；读取失败不靠 TokenElevation 或 SendInput 成功值推定可输入。
 4. UIA 可读时先核密码/保护/禁用/只读；明确按钮、菜单等非输入控件拒绝。Custom/Pane 等未知属性不能仅因不可读而一律拒绝。每次正文读回前再次检查保护属性，不读已知密码内容；未知安全属性仍有已明示限制。
 5. 本地读取最终控件正文与选区，用于严格核验。优先 TextPattern；经典 `Edit` 只有 ValuePattern 时，向同 PID、当前 hwndFocus 的原生 Edit 发只读 `EM_GETSEL`，使用 32 位返回位置和 150ms 消息超时，不猜光标。空正文+合法光标是正常空输入框，不可一律当失败。S4 对照实测补充：Chromium Edit 的 TextPattern 可能以单个 U+FFFC 表示空控件，仅在 ValuePattern 独立明确为空、零光标/选区、无嵌入子对象时规范化；真实 U+FFFC 与其他差异仍原样比较（[Chromium 源码依据](https://chromium.googlesource.com/chromium/src/+/main/ui/accessibility/ax_position.h)）。Chromium 首次尚无 pattern/选区可有界重试，正文与选区无法一致则保持不可核验。正文/选区缺失仍可一次粘贴。全文最大 200000 UTF-16 单元，越界不记录可核验成功。
