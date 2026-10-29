@@ -26,5 +26,5 @@
 
 ## 待决问题
 
-- Windows 版本（v0.0.2）[范围与技术验证决策稿](02-prd/windows-version-decision-20261029.md)待本人评审：Q1 辅助程序语言、Q2 默认快捷键、Q3 代码签名、Q4 关闭与自启、Q5 借用 Windows 的使用方式、Q6 Windows 10 是否验收、Q7 管理员窗口；评审前不进入开发，技术验证需推送分支（待授权）。
+- Windows 版本（v0.0.2）[范围与技术验证决策稿](02-prd/windows-version-decision-20261029.md)：Q1–Q7 已由本人逐项决定（Rust 辅助程序；默认快捷键先保持 Ctrl+Shift+Space 待实测；v0.0.2 不签名；关闭到托盘、自启默认关闭、仅 Windows；真机用方式 C；Win10/11 验收以可得真机为准；管理员窗口首版不支持并明确告知）；**待办**：Q5 机主回复、决策稿其余部分待本人确认、推送 `feature/0.0.2` 授权（技术验证用 GitHub Windows 机）；评审前不进入开发。
 - 快速纠正学习 S1 [需求变更](02-prd/fast-correction-learning-decision-20261028.md)、S2 [技术方案](03-architecture/fast-correction-learning-design-20261028.md)、S3 用例（TC-LEARN-16～31）待本人评审后进入开发。
