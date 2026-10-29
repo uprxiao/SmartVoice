@@ -92,7 +92,8 @@ Product-Case 'TC-WIN-03-product-owned-popup' {
         $popup=Fixture 'openOwnedPopup'
         $end=[DateTime]::UtcNow.AddSeconds(2)
         do {$current=Native 'foreground';if($null -ne $current.root -and $current.root.hwnd -eq $popup.hwnd){break};Start-Sleep -Milliseconds 20}while([DateTime]::UtcNow -lt $end)
-        Assert-Probe ($null -ne $current.admission.info -and $null -ne $current.root -and $null -ne $current.root_owner -and $current.admission.info.pid -eq $field.pid -and $current.root.hwnd -eq $popup.hwnd -and $current.root.hwnd -ne $original.root.hwnd -and $current.root_owner.hwnd -eq $original.root_owner.hwnd) 'Actual same-process owned popup/root-owner contrast was not obtained'
+        Write-NewJson @{original=$original;popup=$popup;current=$current} (Join-Path $OutputDir 'product-owned-popup-preparation.json')
+        Assert-Probe ($null -ne $current.admission.info -and $null -ne $current.root -and $null -ne $current.root_owner -and $current.admission.info.pid -eq $field.pid -and $current.root.hwnd -eq $popup.hwnd -and $current.root.hwnd -ne $original.root.hwnd -and $current.root_owner.hwnd -eq $original.root_owner.hwnd) 'BLOCKED: Actual same-process owned popup/root-owner contrast was not obtained'
         $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
         $validation=Product 'validate' @{target=$capture.target}
         $restore=Product 'validate' @{target=$capture.target;restoreFocus=$true}

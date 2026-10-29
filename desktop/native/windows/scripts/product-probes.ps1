@@ -15,7 +15,7 @@ $plannedIds += 'TC-WIN-04-product-late-readback'
 $plannedIds += 'TC-WIN-03-product-owned-popup'
 $script:SlowUiaEvidence=$null
 foreach ($id in $plannedIds) { $script:ProductResults[$id] = @{id=$id;status='not_run';reason='not attempted'} }
-$productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'))
+$productInfo = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/smartvoiceinput-input.exe'))
 $productInfo.UseShellExecute = $false
 $productInfo.CreateNoWindow = $true
 $productInfo.RedirectStandardInput = $true
@@ -217,5 +217,5 @@ try {
     $script:Product.StandardInput.Close()
     if (-not $script:Product.WaitForExit(3000)) { $script:Product.Kill($true); $script:Product.WaitForExit(3000) | Out-Null }
     if ($productStderr.Wait(1000)) { [System.IO.File]::WriteAllText((Join-Path $OutputDir 'product-stderr.txt'), $productStderr.Result, $Utf8) }
-    Write-NewJson @{planned=$plannedIds.Count;cases=@($script:ProductResults.Values);scope='production helper against independent fixtures; not packaged product/audio/S5'} (Join-Path $OutputDir 'product-cases.json')
+    Write-NewJson @{planned=$plannedIds.Count;cases=@($script:ProductResults.Values);source_sha=$env:GITHUB_SHA;helper_sha256=(Get-FileHash $productInfo.FileName).Hash;build_profile='x86_64-pc-windows-msvc/+crt-static';scope='formal static CRT helper against independent fixtures; packaged hash checked separately, no audio/S5'} (Join-Path $OutputDir 'product-cases.json')
 }

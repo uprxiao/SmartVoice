@@ -67,7 +67,7 @@ async function command(request) {
   switch (request.action) {
     case 'openOwnedPopup': {
       if(process.env.GITHUB_ACTIONS!=='true'||ownedPopup)throw Error('Fresh disposable popup required');
-      ownedPopup=new BrowserWindow({parent:main,width:420,height:280,show:false,title:'SVI owned popup',webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
+      ownedPopup=new BrowserWindow({parent:main,modal:true,width:420,height:280,show:false,title:'SVI owned popup',webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
       const html='<title>SVI owned popup</title><textarea autofocus>popup unchanged</textarea><script>window.pasteCount=0;window.enterCount=0;document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key.toLowerCase()==="v")window.pasteCount++;if(e.key==="Enter")window.enterCount++;});</script>';
       await ownedPopup.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html));
       ownedPopup.show();ownedPopup.focus();ownedPopup.webContents.focus();
@@ -86,7 +86,7 @@ async function command(request) {
     }
     case 'productPeerStart': {
       if (process.env.GITHUB_ACTIONS !== 'true' || productPeer) throw new Error('disposable peer already exists or is not allowed');
-      const executable = path.join(process.env.CARGO_TARGET_DIR, 'release', 'smartvoiceinput-input.exe');
+      const executable = path.join(process.env.CARGO_TARGET_DIR, 'x86_64-pc-windows-msvc', 'release', 'smartvoiceinput-input.exe');
       if (!fs.existsSync(executable)) throw new Error('frozen production helper missing');
       productPeer = spawn(executable, ['--parent-pid', String(process.pid)], { windowsHide:true, stdio:['pipe','pipe','pipe'] });
       const child=productPeer;

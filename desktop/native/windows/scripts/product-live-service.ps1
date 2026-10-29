@@ -106,13 +106,17 @@ try {
     # process or its direct, independently identified Python runtime child.
     Assert-Live (($owner.direct_launcher -or $owner.direct_owned_child) -and $owner.runtime_not_older -and $owner.binary_hash_matches -and $owner.listener_matches_runtime -and $owner.launcher_alive) 'Loopback API listener does not belong to the owned Python runtime'
     $data.api_listener_owned=$true
-    $native=Join-Path $env:CARGO_TARGET_DIR 'release/smartvoiceinput-input.exe'
+    $native=Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/smartvoiceinput-input.exe'
+    $packagedHelper=Join-Path $env:RUNNER_TEMP 'SVI 产品 smoke/win-unpacked/resources/voice/smartvoiceinput-input.exe'
     $devHelper=Join-Path $repo 'desktop/resources/voice/smartvoiceinput-input.exe'
     if(-not (Test-Path $devHelper)){
         [IO.Directory]::CreateDirectory((Split-Path $devHelper -Parent))|Out-Null
         [IO.File]::Copy($native,$devHelper,$false)
     }
-    Assert-Live ((Get-FileHash $native).Hash -eq (Get-FileHash $devHelper).Hash) 'Development helper differs from the frozen production helper'
+    $helperIdentity=@{build_profile='x86_64-pc-windows-msvc/+crt-static';probe_sha256=(Get-FileHash $native).Hash;development_sha256=(Get-FileHash $devHelper).Hash;packaged_sha256=(Get-FileHash $packagedHelper).Hash}
+    Write-NewJson $helperIdentity (Join-Path $EvidenceDir 'helper-identity.json')
+    Assert-Live ($helperIdentity.probe_sha256 -eq $helperIdentity.development_sha256 -and $helperIdentity.probe_sha256 -eq $helperIdentity.packaged_sha256) 'Probe, development and packaged static CRT helpers differ'
+    $data.helper_identity=$helperIdentity
     $launch=Start-Desktop;$desktop=$launch.process
     & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-register.json') 'register'
     Assert-Live ($LASTEXITCODE -eq 0) 'Actual desktop register/Windows permission UI cases failed'

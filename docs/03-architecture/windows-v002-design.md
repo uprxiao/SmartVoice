@@ -127,6 +127,8 @@ HudPosition 继续按当前代际/可见性检查迟到响应；显示、更新�
 
 `build-voice-helper.mjs` 在 Windows 用 Cargo `--locked --release --target x86_64-pc-windows-msvc --bin smartvoiceinput-input`，显式使用 `crt-static`（[Rust 依据](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)），检查真实退出码，再将唯一正式 exe 复制到 resources/voice。Mac Swift 构建保持。Windows 安装包只装对应 `.exe`，Mac 只装其 helper；不得顺手打包 verify、probe、源码、夹具或其他平台残留文件。
 
+正式 L2 使用同一目标与静态 CRT 参数构建的 helper，记录执行文件摘要；接真实 Main 前再独立核对 L2、开发资源和 NSIS 资源的 SHA-256 一致。独立技术 probe/verify 仍与产品程序分开，不把不同 CRT 构建直接当成同一个二进制。
+
 沿用 NSIS、现有公开内网 CA/服务地址注入与 HTTPS/WSS；Rust 无独立运行时安装步骤，产品 smoke 检查实际 DLL 导入不依赖外部 C runtime，不加管理员 manifest/uiAccess。版本元数据按项目发布约定同步；分支 push 不创建 tag、不发布。Windows 普通 CI 构建纳入 Rust 检查/单测；技术验证与正式产品 smoke 分开，源 SHA、环境和失败分母留证。
 
 | 交付物 | S4 工作 | 验证 |

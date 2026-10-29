@@ -54,6 +54,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "SVI_MODIFIER_POLICY_CHECKED=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           cargo build --locked --release --bins --manifest-path desktop/native/windows/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Same target/runtime flags as desktop/scripts/build-voice-helper.mjs.
+          cargo build --locked --release --target x86_64-pc-windows-msvc --config 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]' --manifest-path desktop/native/windows/Cargo.toml --bin smartvoiceinput-input
           exit $LASTEXITCODE
       - name: Save compiled probe dependencies
         if: always() && steps.native-build.outcome == 'success'
@@ -100,6 +103,7 @@ jobs:
           path: |
             ${{ runner.temp }}/svi-windows-evidence/run/product-cases.json
             ${{ runner.temp }}/svi-windows-evidence/run/product-own-restore.json
+            ${{ runner.temp }}/svi-windows-evidence/run/product-owned-popup-preparation.json
             ${{ runner.temp }}/svi-windows-evidence/run/product-slow-uia.json
             ${{ runner.temp }}/svi-windows-evidence/run/summary.json
           if-no-files-found: warn
@@ -208,6 +212,7 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/setup-acl.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/api-owner.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/runtime-owner.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/helper-identity.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-register.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
