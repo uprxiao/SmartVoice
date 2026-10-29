@@ -9,7 +9,7 @@
 | V1（口述、整理、插入、词库与修改学习、历史统计、管理后台） | 已完成开发与验收 |
 | V2（云端 ASR provider、后台模型服务管理） | 已完成开发与验收 |
 | 辅助功能未授权提示（TC-INSERT-22） | 已完成，随 v0.0.1 发布 |
-| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围决策](02-prd/windows-version-decision-20261029.md)已确认；**9 项开发前阻断技术验证通过，S0/S1/S2/S3 已补齐复核，已登记进入 S4，三端按专项用例实施中**。见 [S0 原型](01-prototype/windows-v002.md)与 [WIN-01～12](02-prd/windows-v002-requirements.md)。真实物理按键、输入法、多屏等 S5 验收仍须执行 |
+| **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围决策](02-prd/windows-version-decision-20261029.md)已确认；**9 项开发前阻断技术验证通过，S0/S1/S2/S3 已补齐复核，S4 主体实现已落盘并同步开发分支**。见 [S0 原型](01-prototype/windows-v002.md)与 [WIN-01～12](02-prd/windows-v002-requirements.md)。三端自动回归与 Windows 开发安装包构建/启动验证通过；剩余联调、真实物理按键、输入法、多屏等验收仍须执行 |
 | 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划顺延到 v0.0.3（v0.0.2 先做 Windows 版） |
 
 已知限制：Mac 预览包未经 Apple 签名与公证；Windows 安装包未签名，完整业务验收未完成；长期稳定性待上线后跟踪。
@@ -23,7 +23,7 @@
 | S1 正式需求修订 | 已整理并复核 | [WIN-01～12](02-prd/windows-v002-requirements.md)与 PRD/BR-07/11 对齐；需求用户评审依据为本人已确认的范围与 Q1–Q7，本次不追加 Windows 修改观察 |
 | S2 Windows 技术设计 | 已整理并复核 | [技术设计](03-architecture/windows-v002-design.md)对齐实际扁平 JSONL、一次执行、平台能力、生命周期、坐标与三端责任；S0 首次关闭确认时序同步复核 |
 | S3 Windows 测试用例 | 已生成并复核 | [40 条专项用例](04-test/test-cases-windows-v002.md)覆盖 12/12 WIN，数据、独立参数与 L1/L2/L3 判据完整；物理键盘/安装包/真实闭环要求保留 |
-| S4 正式开发 | 进行中 | 正式 helper 已接入，Windows 实际产品动作 17/17 参数通过（[运行](https://github.com/uprxiao/SmartVoice/actions/runs/40867930370)）；平台 UI/托盘/自启/坐标代码与本地回归已完成，正式包构建/启动验证待执行。Server 真实 PostgreSQL/HTTP 21项、Admin 构建/93项回归通过；S5 未执行。见 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
+| S4 正式开发 | 主体已实现，分层验证中 | 正式 helper、平台 UI/麦克风/RPC、托盘/单实例/后台自启、坐标与打包已实现；源码 `48628d1` 的[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40881145082)通过，含 Desktop Mac/Windows 各694项、Rust13项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项专项另已通过。`8bc42f6` 的[Windows 开发包验证](https://github.com/uprxiao/SmartVoice/actions/runs/40883701708)通过：正式原生17/17参数、9/9技术阻断、NSIS x64、普通完整性进程后台隐藏/不抢焦点、真实RPC自启off/on/off读回、第二实例和helper清理。Mac arm64开发包构建通过。失败与未执行参数全部保留，不以部分参数冒称40条或S5全通过。见 [专项用例](04-test/test-cases-windows-v002.md)与 [三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
 | S5 真机验收 | 未开始 | Windows x64 自测；V-04 物理按键及 V-05/06/11/12/13/15 和目标安装包均须留证 |
 
 ## 文档
@@ -42,5 +42,5 @@
 
 - Windows 技术验证 V-04 层级已于 2026-10-29 由本人确认：阶段 1 使用托管机按住键状态、目标一次 Ctrl+V/无卡键实测及物理事件来源/恢复策略单测；物理键盘按住、提前释放等继续是 S5 真机必验。按该判据复验，未据确认本身登记通过；见[决策稿 §6](02-prd/windows-version-decision-20261029.md#6-技术验证方案先于开发)。
 
-- Windows 版本（v0.0.2）范围与 Q1–Q7 已确认，不重复请求评审；本人于 2026-10-29 明确授权推送并按既定门禁继续 S0–S4，同范围工作沿用该授权。阶段 1 技术门禁已通过，当前依次整理并复核 Windows 专属 S1/S2/S3；既有通用文档与 v0.0.3 学习草稿不替代它们。发生新需求决策仍先登记本节。
+- Windows 版本（v0.0.2）范围与 Q1–Q7 已确认，不重复请求评审；本人于 2026-10-29 明确授权推送并按既定门禁继续 S0–S4，同范围工作沿用该授权。阶段 1 技术门禁及 Windows 专属 S0/S1/S2/S3 已依次复核，S4主体实现与三端自动回归已执行；既有通用文档与 v0.0.3 学习草稿不替代本版产物。源码只同步 `feature/0.0.2`，尚无本版 main/tag/Release；发生新需求决策仍先登记本节。
 - 快速纠正学习 S1 [需求变更](02-prd/fast-correction-learning-decision-20261028.md)、S2 [技术方案](03-architecture/fast-correction-learning-design-20261028.md)、S3 用例（TC-LEARN-16～31）待本人评审后进入开发。
