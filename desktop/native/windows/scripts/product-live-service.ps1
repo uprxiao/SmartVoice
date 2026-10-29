@@ -95,19 +95,20 @@ function Profile-Facts([string]$Label){
 }
 function Crypto-Control {
     $records=@()
-    foreach($kind in @('hard','graceful')){
-        $directory=Join-Path $EvidenceDir "crypto-$kind"
+    foreach($variant in @(@{kind='hard';api='sync'},@{kind='graceful';api='sync'},@{kind='hard';api='async'})){
+        $kind=$variant.kind;$apiMode=$variant.api
+        $directory=Join-Path $EvidenceDir "crypto-$apiMode-$kind"
         Assert-Live (-not (Test-Path $directory)) 'Fresh crypto control required'
         [IO.Directory]::CreateDirectory($directory)|Out-Null
-        Write-NewJson @{schema='svi-safe-storage-control-v1';exit_kind=$kind} (Join-Path $directory 'owner.json')
-        $row=@{exit_kind=$kind;scope='standalone real safeStorage control, not product or UI pass'}
+        Write-NewJson @{schema='svi-safe-storage-control-v1';exit_kind=$kind;api_mode=$apiMode} (Join-Path $directory 'owner.json')
+        $row=@{exit_kind=$kind;api_mode=$apiMode;scope='standalone real safeStorage control, not product or UI pass'}
         foreach($phase in @('encrypt','decrypt')){
             $process=$null
             try{
                 $info=[Diagnostics.ProcessStartInfo]::new($electron);$info.UseShellExecute=$false;$info.CreateNoWindow=$true
                 $info.Environment.Clear()
                 foreach($key in @('PATH','SYSTEMROOT','WINDIR','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','HOMEDRIVE','HOMEPATH','GITHUB_ACTIONS','RUNNER_TEMP')){if($null -ne [Environment]::GetEnvironmentVariable($key)){$info.Environment[$key]=[Environment]::GetEnvironmentVariable($key)}}
-                foreach($arg in @((Join-Path $repo 'desktop/native/windows/fixtures/credential-control.cjs'),"--user-data-dir=$directory",'--control-dir',$directory,'--control-phase',$phase,'--control-exit',$kind)){$info.ArgumentList.Add($arg)}
+                foreach($arg in @((Join-Path $repo 'desktop/native/windows/fixtures/credential-control.cjs'),"--user-data-dir=$directory",'--control-dir',$directory,'--control-phase',$phase,'--control-exit',$kind,'--control-api',$apiMode)){$info.ArgumentList.Add($arg)}
                 $process=[Diagnostics.Process]::Start($info)
                 $file=Join-Path $directory "$phase.json";$end=[DateTime]::UtcNow.AddSeconds(8)
                 while(-not (Test-Path $file)){
@@ -123,7 +124,7 @@ function Crypto-Control {
         }
         $records+=@($row)
     }
-    Write-NewJson @{scope='two independently owned actual Electron encryption controls; no token/key/cipher contents';observations=$records} (Join-Path $EvidenceDir 'crypto-control.json')
+    Write-NewJson @{scope='three independently owned actual Electron encryption controls; no token/key/cipher contents';observations=$records} (Join-Path $EvidenceDir 'crypto-control.json')
 }
 try {
     Assert-Live (-not (Test-Path $EvidenceDir)) 'New integration directory required'

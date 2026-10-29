@@ -2,12 +2,12 @@
 const {app,safeStorage}=require('electron');
 const fs=require('node:fs'),path=require('node:path');
 const option=name=>{const index=process.argv.indexOf(name);return index>=0?process.argv[index+1]:undefined;};
-const owned=option('--control-dir'),phase=option('--control-phase'),exitKind=option('--control-exit');
-if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!['encrypt','decrypt'].includes(phase)||!['hard','graceful'].includes(exitKind))throw Error('Disposable Windows crypto control required');
+const owned=option('--control-dir'),phase=option('--control-phase'),exitKind=option('--control-exit'),apiMode=option('--control-api');
+if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!['encrypt','decrypt'].includes(phase)||!['hard','graceful'].includes(exitKind)||!['sync','async'].includes(apiMode))throw Error('Disposable Windows crypto control required');
 const directory=path.resolve(owned||'');
 const relative=path.relative(path.resolve(process.env.RUNNER_TEMP),directory);
 const owner=JSON.parse(fs.readFileSync(path.join(directory,'owner.json'),'utf8'));
-if(relative.startsWith('..')||path.isAbsolute(relative)||fs.lstatSync(directory).isSymbolicLink()||owner.schema!=='svi-safe-storage-control-v1'||owner.exit_kind!==exitKind)throw Error('Fresh owned crypto directory required');
+if(relative.startsWith('..')||path.isAbsolute(relative)||fs.lstatSync(directory).isSymbolicLink()||owner.schema!=='svi-safe-storage-control-v1'||owner.exit_kind!==exitKind||owner.api_mode!==apiMode)throw Error('Fresh owned crypto directory required');
 app.setName('SVI Credential Control');
 app.setPath('userData',directory);app.setPath('sessionData',directory);
 const canary='SmartVoiceInput fictional safeStorage fixture';
@@ -21,15 +21,18 @@ function facts(){
   let state;try{state=JSON.parse(fs.readFileSync(local,'utf8'));}catch{}
   return {user_data_is_owned:path.resolve(app.getPath('userData'))===directory,session_data_is_owned:path.resolve(app.getPath('sessionData'))===directory,local_state_present:fs.existsSync(local),local_state_parseable:Boolean(state),encrypted_key_present:Boolean(state?.os_crypt?.encrypted_key),app_bound_key_present:Boolean(state?.os_crypt?.app_bound_encrypted_key)};
 }
-app.whenReady().then(()=>{
-  const report={scope:'standalone real safeStorage control; no account or product/UI pass',phase,exit_kind:exitKind,electron_version:process.versions.electron,arch:process.arch,available:safeStorage.isEncryptionAvailable(),observed_at:new Date().toISOString(),secret_values_recorded:false};
+app.whenReady().then(async()=>{
+  const report={scope:'standalone real safeStorage control; no account or product/UI pass',phase,exit_kind:exitKind,api_mode:apiMode,electron_version:process.versions.electron,arch:process.arch,observed_at:new Date().toISOString(),secret_values_recorded:false};
   try{
+    report.available=apiMode==='async'?await safeStorage.isAsyncEncryptionAvailable():safeStorage.isEncryptionAvailable();
     if(!report.available)report.status='unavailable';
     else if(phase==='encrypt'){
-      const cipher=safeStorage.encryptString(canary);fs.writeFileSync(path.join(directory,'cipher.private.bin'),cipher,{flag:'wx'});
+      const cipher=apiMode==='async'?await safeStorage.encryptStringAsync(canary):safeStorage.encryptString(canary);fs.writeFileSync(path.join(directory,'cipher.private.bin'),cipher,{flag:'wx'});
       report.encrypted_bytes=cipher.length;report.status='encrypted';
     }else{
-      report.decrypted_matches=safeStorage.decryptString(fs.readFileSync(path.join(directory,'cipher.private.bin')))===canary;
+      const cipher=fs.readFileSync(path.join(directory,'cipher.private.bin'));
+      const plaintext=apiMode==='async'?(await safeStorage.decryptStringAsync(cipher)).result:safeStorage.decryptString(cipher);
+      report.decrypted_matches=plaintext===canary;
       report.status=report.decrypted_matches?'matches':'mismatch';
     }
   }catch(error){report.status='error';report.error_type=error.name;}
