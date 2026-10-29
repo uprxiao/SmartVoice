@@ -272,7 +272,7 @@ try {
             $denial = $null
             if ($fieldName -ne 'disabled') {
                 $denial = Native 'probePaste' @{fixture_pid=$field.pid;text='MUST NOT BE WRITTEN'}
-                Assert-Probe ($denial.status -eq 'rejected' -and $denial.effect -eq 'none') 'Protected field was not rejected without writing'
+                Assert-Probe ($denial.status -eq 'rejected' -and $denial.effect -eq 'none' -and $denial.reason -eq $expected) 'Protected field was not rejected for its actual protection reason'
                 $unchanged = Fixture 'fieldState'
                 Assert-Probe ($unchanged.value -ceq 'fixture-only') 'Protected field was changed'
             }
