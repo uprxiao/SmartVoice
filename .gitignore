@@ -82,6 +82,7 @@ docs/01-prototype/verification-*
 docs/04-test/*
 !docs/04-test/test-cases.md
 !docs/04-test/test-cases-v2.md
+!docs/04-test/test-cases-windows-v002.md
 !docs/04-test/coverage.md
 !docs/04-test/execution-matrix.md
 !docs/04-test/experiment-record-template.md
