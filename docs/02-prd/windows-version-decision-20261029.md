@@ -104,7 +104,7 @@ Windows 排在学习之前的理由：学习依赖“插入后读回目标内容
 
 | # | 问题 | 建议 |
 |---|---|---|
-| Q1 | Windows 辅助程序语言：Rust（`windows` crate，单 exe）/ C#（需 self-contained 或 NativeAOT）/ C++（COM） | 建议 Rust：无运行时依赖，Windows API 覆盖完整；没有找到可靠的体积/冷启动对比数据，由 V-14 实测确认 |
+| Q1 | Windows 辅助程序语言 | **已决（本人 2026-10-29）：A，Rust**（`windows` crate，独立常驻进程、沿用 stdin/stdout 按行 JSON 协议）。理由：与 macOS 架构一致、故障隔离、无运行时依赖、协议与语言无关因此日后可低成本更换；体积与冷启动耗时由 V-14 实测，CI 是否预装 Rust 未核实（可由工作流 `rustup` 安装）。已否决：C#（运行时依赖/NativeAOT 对 COM 的限制）、C++（工程成本）、纯 TypeScript+koffi（无 COM 支持、故障会拖累主进程） |
 | Q2 | Windows 默认快捷键是否沿用 `Ctrl+Shift+Space` | 待 V-13 实测（Shift+Space 是输入法全角/半角键，Ctrl+Shift 是切换输入语言，无来源直接讨论该组合）；冲突则 Windows 另选默认并加入保留表 |
 | Q3 | Windows 代码签名 | v0.0.2 仍发未签名预览包；2024 年起 EV 也不能绕过 SmartScreen，信誉靠累积；候选：SignPath Foundation（开源免费但需公开知名度并手动审批）、Azure Artifact Signing（个人仅美/加）、Certum 开源证书（私钥需硬件令牌）。需你决定发布者身份后另议 |
 | Q4 | 关闭窗口行为与自启 | 关闭到托盘；开机自启做成设置项，默认关闭 |
