@@ -68,10 +68,10 @@ try {
     }
     $fixtureRegistered=$true
     $otherBefore=Registry-State $other
-    $profile=Join-Path $env:APPDATA 'SmartVoiceInput'
-    $marker=Join-Path $profile "svi-fictional-preserved-$env:GITHUB_RUN_ID.txt"
+    $taskUserDataDir=Join-Path $env:APPDATA 'SmartVoiceInput'
+    $marker=Join-Path $taskUserDataDir "svi-fictional-preserved-$env:GITHUB_RUN_ID.txt"
     if(Test-Path $marker){throw 'Refusing to overwrite a profile fixture'}
-    [IO.Directory]::CreateDirectory($profile)|Out-Null
+    [IO.Directory]::CreateDirectory($taskUserDataDir)|Out-Null
     [IO.File]::WriteAllText($marker,'Fictional persisted user file; no account or credentials.')
     $markerHash=(Get-FileHash $marker -Algorithm SHA256).Hash
     foreach($round in @(1,2)) {
