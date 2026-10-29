@@ -1,17 +1,20 @@
-param([Parameter(Mandatory=$true)][string]$PackageDir,[Parameter(Mandatory=$true)][string]$EvidenceFile,[switch]$Worker)
+param([Parameter(Mandatory=$true)][string]$PackageDir,[Parameter(Mandatory=$true)][string]$EvidenceFile,[switch]$Worker,[string]$ExecutableDir='',[switch]$LeaveStartupEnabled)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'probe-files.ps1')
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Package smoke is restricted to a disposable runner' }
 $verify=Join-Path $env:CARGO_TARGET_DIR 'release/verify.exe'
 if (-not $Worker) {
-    & $verify --medium (Get-Command pwsh).Source -NoProfile -File $PSCommandPath -Worker -PackageDir $PackageDir -EvidenceFile $EvidenceFile
+    $arguments=@('-NoProfile','-File',$PSCommandPath,'-Worker','-PackageDir',$PackageDir,'-EvidenceFile',$EvidenceFile)
+    if ($ExecutableDir) { $arguments+=@('-ExecutableDir',$ExecutableDir) }
+    if ($LeaveStartupEnabled) { $arguments+='-LeaveStartupEnabled' }
+    & $verify --medium (Get-Command pwsh).Source @arguments
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $EvidenceFile)) { throw 'Packaged product Medium smoke failed' }
     exit 0
 }
 $preflight=& $verify --preflight | ConvertFrom-Json
 if ($preflight.integrity_rid -ne 8192) { throw 'Actual package smoke must run at Medium integrity' }
-Add-Type @'
+if (-not ('SviProductWindows' -as [type])) { Add-Type @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -28,13 +31,15 @@ public static class SviProductWindows {
   }
 }
 '@
+}
 $data=[ordered]@{source_sha=$env:GITHUB_SHA;integrity_rid=$preflight.integrity_rid;scope='actual packaged app/bridge; no login, audio, model, hardware or S5';status='not_run'}
 $root=$null
 $second=$null
 $helpers=@()
 try {
-    $exe=Join-Path $PackageDir 'win-unpacked/SmartVoiceInput.exe'
-    $voice=Join-Path $PackageDir 'win-unpacked/resources/voice'
+    $binaryDir=if ($ExecutableDir) { $ExecutableDir } else { Join-Path $PackageDir 'win-unpacked' }
+    $exe=Join-Path $binaryDir 'SmartVoiceInput.exe'
+    $voice=Join-Path $binaryDir 'resources/voice'
     $resources=@(Get-ChildItem $voice -File)
     if ($resources.Count -ne 1 -or $resources[0].Name -ne 'smartvoiceinput-input.exe') { throw 'Unexpected helper/probe files in product package' }
     $data.helper_sha256=(Get-FileHash $resources[0].FullName -Algorithm SHA256).Hash
@@ -78,7 +83,8 @@ try {
     }
     $data.background=@{visible_count=$visible.Count;foreground_unchanged=($before -eq $foreground);helpers=$helpers.Count;real_bridge=$true}
     $rpcEvidence=Join-Path (Split-Path $EvidenceFile -Parent) 'product-rpc.json'
-    & node (Join-Path $PSScriptRoot 'product-rpc-smoke.cjs') $debugPort $rpcEvidence
+    $finalStartup=if ($LeaveStartupEnabled) { 'on' } else { 'off' }
+    & node (Join-Path $PSScriptRoot 'product-rpc-smoke.cjs') $debugPort $rpcEvidence $finalStartup
     if ($LASTEXITCODE -ne 0) {
         $folder=Join-Path (Split-Path $EvidenceFile -Parent) 'startup-diagnostics'
         [IO.Directory]::CreateDirectory($folder)|Out-Null

@@ -1,8 +1,8 @@
 // Automated CI boundary test of the actual packaged Main/preload. No app mock mode or account.
 const fs = require('node:fs');
 const WebSocket = require('ws');
-const [port, evidence] = process.argv.slice(2);
-if (process.env.GITHUB_ACTIONS !== 'true' || !/^\d{1,5}$/.test(port ?? '') || !evidence) throw new Error('Disposable CI arguments required');
+const [port, evidence, finalStartup = 'off'] = process.argv.slice(2);
+if (process.env.GITHUB_ACTIONS !== 'true' || !/^\d{1,5}$/.test(port ?? '') || !evidence || !['on','off'].includes(finalStartup)) throw new Error('Disposable CI arguments required');
 const report = { scope: 'actual packaged local RPC/system startup read-back; no system-login/audio/S5', status: 'not_run' };
 let socket, seq = 0;
 const pending = new Map();
@@ -49,7 +49,9 @@ function call(method, params) {
     } finally { disabled = await invoke('app.updateAutoStart', false); }
     const final = await invoke('app.info');
     if (!invalidRejected || !axRejected || ax.supported || disabled.registered || final.autoStart.registered || final.autoStart.error) throw new Error('RPC boundary or startup cleanup failed');
-    return { initial, enabled, disabled, final, invalidRejected, axRejected };
+    const retained = ${JSON.stringify(finalStartup)} === 'on' ? await invoke('app.updateAutoStart', true) : final.autoStart;
+    if (${JSON.stringify(finalStartup)} === 'on' && (!retained.registered || !retained.enabled || retained.error)) throw new Error('Could not retain own startup entry for uninstaller verification');
+    return { initial, enabled, disabled, final, retained, invalidRejected, axRejected };
   })()` });
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
   report.observations = result.result.value;

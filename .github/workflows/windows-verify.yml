@@ -117,8 +117,13 @@ jobs:
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         run: ./desktop/native/windows/scripts/product-package-smoke.ps1 -PackageDir "$env:RUNNER_TEMP/SVI 产品 smoke" -EvidenceFile "$env:SVI_PROBE_EVIDENCE/product-package.json"
+      - name: Verify actual install uninstall and reinstall
+        id: product-install
+        if: ${{ !cancelled() && steps.product-smoke.outcome == 'success' }}
+        shell: pwsh
+        run: ./desktop/native/windows/scripts/product-install-smoke.ps1 -PackageDir "$env:RUNNER_TEMP/SVI 产品 smoke" -EvidenceDir "$env:SVI_PROBE_EVIDENCE/installation"
       - name: Preserve the development installer
-        if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' }}
+        if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' && steps.product-install.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-v002-development-${{ github.run_id }}
@@ -139,5 +144,7 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/run/*.txt
             ${{ runner.temp }}/svi-windows-evidence/run/fixture-rpc/*.json
             ${{ runner.temp }}/svi-windows-evidence/run/fixture-rpc/*.png
+            ${{ runner.temp }}/svi-windows-evidence/installation/**/*.json
+            ${{ runner.temp }}/svi-windows-evidence/installation/*.json
           if-no-files-found: warn
           retention-days: 1
