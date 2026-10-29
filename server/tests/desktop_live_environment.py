@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import socket
 import subprocess
@@ -118,20 +119,32 @@ def prepare(run_dir, pg_bin, port):
     with Path(value["config"]).open("x", encoding="utf-8") as file:
         yaml.safe_dump(config, file, allow_unicode=True)
     with (run_dir / "setup.private.log").open("x", encoding="utf-8") as log:
-        def run(args, **kwargs):
-            subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, check=True, **kwargs)
-        run([executable("initdb"), "-D", value["pg_data"], "-U", "svi_desktop_test",
+        def run(stage, args, **kwargs):
+            try:
+                subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, check=True, **kwargs)
+            except subprocess.CalledProcessError as error:
+                log.flush()
+                tail = (run_dir / "setup.private.log").read_bytes()[-16000:].decode("utf-8", errors="replace")
+                for secret in private.values():
+                    tail = tail.replace(secret, "[redacted]")
+                for path in (str(run_dir), str(ROOT), str(Path.home())):
+                    tail = tail.replace(path, "[owned-path]")
+                tail = re.sub(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[redacted-token]", tail)
+                write_new(run_dir / "setup-failure.json", {"stage": stage, "exit_code": error.returncode,
+                          "error_type": type(error).__name__, "sanitized_log_tail": tail})
+                raise
+        run("initdb", [executable("initdb"), "-D", value["pg_data"], "-U", "svi_desktop_test",
              "--auth-local=trust", "--auth-host=trust", "--encoding=UTF8", "--locale=C"])
         options = f"-h 127.0.0.1 -p {pg_port}"
         if os.name != "nt":
             sockets = Path(tempfile.mkdtemp(prefix="svd-"))
             options += f" -k {sockets}"
-        run([executable("pg_ctl"), "-D", value["pg_data"], "-l", str(run_dir / "postgres.private.log"),
+        run("start-postgres", [executable("pg_ctl"), "-D", value["pg_data"], "-l", str(run_dir / "postgres.private.log"),
              "-o", options, "-w", "start"])
-        run([executable("createdb"), "-h", "127.0.0.1", "-p", str(pg_port), "-U", "svi_desktop_test", database])
+        run("create-database", [executable("createdb"), "-h", "127.0.0.1", "-p", str(pg_port), "-U", "svi_desktop_test", database])
         env = child_env(value)
-        run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=ROOT / "server", env=env)
-        run([sys.executable, "-m", "app.cli", "admin", "init", "--email", "admin-live@example.test",
+        run("migrate", [sys.executable, "-m", "alembic", "upgrade", "head"], cwd=ROOT / "server", env=env)
+        run("bootstrap-admin", [sys.executable, "-m", "app.cli", "admin", "init", "--email", "admin-live@example.test",
              "--display-name", "Synthetic Desktop Admin", "--password-stdin"], cwd=ROOT / "server", env=env,
             input=private["password"] + "\n", text=True)
     write_new(run_dir / "prepared.json", {"status": "prepared", "database_prefix_verified": True,
