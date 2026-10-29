@@ -78,7 +78,7 @@ stable 通道需要的 GitHub Secrets：
    git tag -a v0.0.1 -m "SmartVoiceInput 0.0.1"
    git push origin v0.0.1
    ```
-8. 在 GitHub Actions 查看 tag 对应的 Release 运行；确认 metadata、三个 package job、publish 全部成功。
+8. 在 GitHub Actions 查看 tag 对应的 Release 运行（推送 tag 未自动触发时，可对该 tag 手动触发：`gh workflow run release.yml --ref vX.Y.Z`，元数据检查会拒绝非附注 tag 或不在 main 中的引用）；确认 metadata、三个 package job、publish 全部成功。
 9. 打开 Release 核对版本、commit、说明、三个安装包、manifest 与 `SHA256SUMS.txt`，并实际下载安装验证。报告实际SHA、tag、Actions/Release链接和未验范围；失败重试及已占用tag处理按AGENTS.md §7.4–7.5执行。
 
 2026-10-27现状：已用 `uprxiao` 将开发分支 `0.0.1` 推送到 `a0130f1`，另已存在非版本历史检查点 `ds-r2-acceptance-20261027`，指向同一提交。它不匹配版本格式、不触发Release，不计作占用 `v0.0.1`；当前规则整理没有新建版本tag、合并main或发布Release。后续发布须重新核对远端，不能把本段历史SHA当实时发布目标。
