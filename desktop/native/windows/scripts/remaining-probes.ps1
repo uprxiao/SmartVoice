@@ -392,11 +392,23 @@ try{
   $file=Join-Path $OutputDir 'max-utf16.txt';[IO.File]::WriteAllText($file,'BEGIN React END',$utf8)
   $notepad=Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($file)
   Check ((Native 'probeFocus' @{fixture_pid=$notepad.Id}).focused) 'Owned Notepad unavailable'
-  $null=Native 'probeSelect' @{fixture_pid=$notepad.Id;start=6;length=5};$null=Native 'probeSeedClipboard'
+  $preparation=@();$readyUntil=[DateTime]::UtcNow.AddSeconds(4)
+  do{
+   $ready=Native 'capture' @{fixture_pid=$notepad.Id};$preparation+=@{title=$ready.foreground.title;readback=$ready.readback}
+   if($ready.foreground.title.Contains([IO.Path]::GetFileName($file)) -and $ready.readback.text -ceq 'BEGIN React END'){break}
+   Start-Sleep -Milliseconds 40
+  }while([DateTime]::UtcNow -lt $readyUntil)
+  Write-NewJson $preparation (Join-Path $OutputDir 'max-notepad-preparation.json')
+  Check ($ready.foreground.title.Contains([IO.Path]::GetFileName($file)) -and $ready.readback.text -ceq 'BEGIN React END') 'BLOCKED: owned Notepad did not finish opening fictional file'
+  $null=Native 'probeSelect' @{fixture_pid=$notepad.Id;start=6;length=5}
+  $selected=Native 'capture' @{fixture_pid=$notepad.Id}
+  Check ($selected.readback.text -ceq 'BEGIN React END' -and $selected.readback.caret_utf16 -eq 6 -and $selected.readback.selection_utf16_len -eq 5) 'BLOCKED: actual Notepad selection precondition unavailable'
+  $null=Native 'probeSeedClipboard'
   $text='🙂'*16000;Check ($text.Length -eq 32000) 'Frozen UTF16 boundary differs'
   $result=Product 'insertCurrent' @{insertion_id='max-notepad-limited-read';text=$text};$actual=Native 'capture' @{fixture_pid=$notepad.Id};$foreground=Native 'foreground'
   Check ($foreground.root.pid -eq $notepad.Id) 'Owned classic window lost foreground'
   $full=[RemainingWin32]::ReadClassic([IntPtr]::new([long]$foreground.root.hwnd),[uint32]$notepad.Id)
+  Write-NewJson @{result=$result;full=$full;uia=$actual.readback} (Join-Path $OutputDir 'max-notepad-readback.json')
   Check ($full.text -ceq "BEGIN $text END" -and $full.start -eq 32006 -and $full.end -eq 32006) 'Independent Win32 full text/caret differs'
   Check ($actual.readback.text.Length -eq 4096 -and $null -eq $actual.readback.caret_utf16 -and $result.status -eq 'unverified' -and $result.effect -eq 'unknown' -and -not $result.observable) 'Limited UIA read was incorrectly treated as strict success'
   Stop-Owned $notepad;return @{result=$result;utf16_units=32000;independent_text_utf16_len=$full.text.Length;caret=$full.start;selection=($full.end-$full.start);uia_read_utf16_len=$actual.readback.text.Length;scope='known hosted classic UIA truncation; full Win32 read is an independent oracle, not a product fallback'}
