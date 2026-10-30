@@ -1,6 +1,6 @@
 // Real production modules in a disposable Electron host. No account, provider,
 // network call, permission override or business RPC substitute is supplied.
-const {app,BrowserWindow}=require('electron');
+const {app,BrowserWindow,screen,systemPreferences}=require('electron');
 const fs=require('node:fs'),path=require('node:path');
 const {performance}=require('node:perf_hooks');
 const [folderArg,profileArg,mode]=process.argv.slice(2);
@@ -70,6 +70,7 @@ app.whenReady().then(async()=>{
  if(mode==='persist-failure')fs.mkdirSync(path.join(profile,'tray-state.json.tmp'));
  tray=new api.WindowsTray(path.join(root,'resources/icon.png'),async()=>{win=await api.createMainWindow({closeToTray:w=>void tray.close(w)});win.show();},()=> 'zh-CN');
  const mains=await Promise.all(Array.from({length:6},()=>api.createMainWindow({closeToTray:w=>void tray.close(w)})));
- win=mains[0];write('ready.json',{...state(),initial_ids:mains.map(w=>w.webContents.id),module_scope:'actual production window/tray/native bridge modules; no full Main login/audio/S5 pass'});
+ let microphone;try{microphone={status:systemPreferences.getMediaAccessStatus('microphone')}}catch{microphone={status:'unknown',error:true}}
+ win=mains[0];write('ready.json',{...state(),initial_ids:mains.map(w=>w.webContents.id),environment:{locale:app.getLocale(),microphone,displays:screen.getAllDisplays().map(d=>({scale_factor:d.scaleFactor,bounds:d.bounds,work_area:d.workArea})),system_settings_binary_present:fs.existsSync(path.join(process.env.SystemRoot,'ImmersiveControlPanel/SystemSettings.exe'))},module_scope:'actual production window/tray/native bridge modules; no full Main login/audio/S5 pass'});
  setInterval(async()=>{if(working||stopping)return;working=true;try{for(const name of fs.readdirSync(folder).filter(n=>/^\d+\.request\.json$/.test(n)).sort((a,b)=>parseInt(a)-parseInt(b))){if(seen.has(name))continue;seen.add(name);const request=JSON.parse(fs.readFileSync(path.join(folder,name),'utf8'));let value;try{value=await command(request);}catch(error){value={error:error.message};}write(name.replace('.request.','.response.'),value);}}finally{working=false;}},30);
 }).catch(error=>{write('host-failure.json',{error:error.message});app.exit(1);});

@@ -61,6 +61,7 @@ public sealed class HandleReuseFixture : Form {
         while(attempts<100000&&watch.ElapsedMilliseconds<60000){
             if(edit!=IntPtr.Zero&&!DestroyWindow(edit))throw new Exception("Intermediate owned HWND was not destroyed");
             attempts++;edit=NewEdit();
+            SetFocus(edit); // Release any retired focus-window reference before the next allocation.
             if(edit==firstHandle){acquired=true;break;}
             if(attempts%1000==0)Application.DoEvents();
         }

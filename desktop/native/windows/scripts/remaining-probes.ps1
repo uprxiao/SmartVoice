@@ -50,6 +50,10 @@ if(-not $Worker){
  $repo=Split-Path $desktop -Parent
  foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','desktop/native/windows/fixtures/remaining-sessions.cjs','desktop/src/main/index.ts','desktop/src/main/rpc.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/native/windows/src/product.rs','desktop/native/windows/src/target_lifetime.rs','desktop/native/windows/fixtures/handle-reuse.cs','desktop/native/windows/fixtures/dialog-native.cs','desktop/native/windows/fixtures/remaining-win32-boundaries.cs','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
  Write-NewJson $plan (Join-Path $OutputDir 'plan.json')
+ $sleepOutput=& (Join-Path $env:WINDIR 'System32/powercfg.exe') /a 2>&1
+ [IO.File]::WriteAllText((Join-Path $OutputDir 'sleep-capabilities.txt'),($sleepOutput|Out-String),$utf8)
+ $layouts=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Keyboard Layout\Preload',$false)
+ try{$keyboardIds=if($null -ne $layouts){@($layouts.GetValueNames()|ForEach-Object{[string]$layouts.GetValue($_)})}else{@()};Write-NewJson @{keyboard_layout_ids=$keyboardIds;scope='read-only ephemeral runner layout registry, no physical IME claim'} (Join-Path $OutputDir 'keyboard-environment.json')}finally{if($null -ne $layouts){$layouts.Dispose()}}
  try{
   $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-Suite',$Suite) -Redirect
   $outTask=$workerProcess.StandardOutput.ReadToEndAsync();$errTask=$workerProcess.StandardError.ReadToEndAsync()

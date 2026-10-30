@@ -163,7 +163,12 @@ export function createRpcRouter(deps: RpcDeps) {
       },
       captureReady: (sessionId: string, attemptNo: number) => { currentSession(sessionId); return deps.sessions.captureReady(sessionId, attemptNo); },
       finish: (sessionId: string) => { currentSession(sessionId); return deps.sessions.finish(); },
-      cancel: (sessionId: string) => { currentSession(sessionId); return deps.sessions.cancel(); },
+      cancel: (sessionId: string) => {
+        currentSession(sessionId);
+        const cancelled = deps.sessions.cancel();
+        if (process.platform === 'win32') deps.native.invalidate();
+        return cancelled;
+      },
       retry: (sessionId: string, kind: 'asr' | 'refine') => { currentSession(sessionId); return deps.sessions.retry(kind); },
       insert: async (sessionId: string, reviewConfirmed: boolean, explicit = true) => {
         currentSession(sessionId);

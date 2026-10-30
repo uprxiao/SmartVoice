@@ -7,13 +7,27 @@ import { createRpcRouter, type RpcDeps } from './rpc';
 const pending = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return {promise, resolve}; };
 function fixture() {
   const auth = {current: {user: {id: 'account-a'}}, contextVersion: 1, ensure: () => auth.current};
-  const sessions = {isBusy: vi.fn(() => false), reset: vi.fn(), start: vi.fn(async () => ({session_id: 'session-a'}))};
+  const sessions = {isBusy: vi.fn(() => false), reset: vi.fn(), start: vi.fn(async () => ({session_id: 'session-a'})),
+    currentSessionId:()=> '33333333-3333-4333-8333-333333333333',cancel:vi.fn(async()=>({state:'cancelled'}))};
+  const native={invalidate:vi.fn()};
   const api = {importCsv: vi.fn().mockResolvedValue({created: 1})};
-  return {auth, sessions, api, router: createRpcRouter({auth, sessions, api} as unknown as RpcDeps)};
+  return {auth, sessions, api,native, router: createRpcRouter({auth, sessions, api,native} as unknown as RpcDeps)};
 }
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.restoreAllMocks());
 describe('main commands preserve initiating account and operation identity (AUTH-16/VOICE-07)', () => {
+  it('Windows cancellation invalidates its already-dispatched helper after checking the current session',async()=>{
+    const platform=Object.getOwnPropertyDescriptor(process,'platform')!;
+    Object.defineProperty(process,'platform',{...platform,value:'win32'});
+    try{
+      const f=fixture();expect(()=>f.router.session.cancel('44444444-4444-4444-8444-444444444444')).toThrow();
+      expect(f.native.invalidate).not.toHaveBeenCalled();expect(f.sessions.cancel).not.toHaveBeenCalled();
+      const cancelled=f.router.session.cancel('33333333-3333-4333-8333-333333333333');
+      expect(f.sessions.cancel).toHaveBeenCalledOnce();expect(f.native.invalidate).toHaveBeenCalledOnce();
+      expect(f.sessions.cancel.mock.invocationCallOrder[0]).toBeLessThan(f.native.invalidate.mock.invocationCallOrder[0]);
+      await expect(cancelled).resolves.toEqual({state:'cancelled'});
+    }finally{Object.defineProperty(process,'platform',platform);}
+  });
   it('cancels the initiating start even before its session ID exists', async () => {
     const f=fixture(), creation=pending<{session_id: string}>(); f.sessions.start.mockReturnValueOnce(creation.promise);
     const starting=f.router.session.start(true, '11111111-1111-4111-8111-111111111111');
