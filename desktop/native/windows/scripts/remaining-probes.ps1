@@ -1,0 +1,280 @@
+param([Parameter(Mandatory=$true)][string]$OutputDir,[switch]$Worker)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+if($env:GITHUB_ACTIONS -ne 'true'){throw 'Disposable CI only'}
+. (Join-Path $PSScriptRoot 'probe-files.ps1')
+$verify=Join-Path $env:CARGO_TARGET_DIR 'release/verify.exe'
+$probe=Join-Path $env:CARGO_TARGET_DIR 'release/svi-windows-probe.exe'
+$formal=Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/smartvoiceinput-input.exe'
+$desktop=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+$electron=Join-Path $desktop 'node_modules/electron/dist/electron.exe'
+$fixtureExe=Join-Path $env:SVI_PROBE_BUNDLE 'win-unpacked/SVI Windows Probe.exe'
+$utf8=[Text.UTF8Encoding]::new($false)
+$script:owned=[Collections.Generic.List[Diagnostics.Process]]::new()
+$script:cleanup=[Collections.Generic.List[object]]::new()
+$script:results=[ordered]@{}
+$planned=@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')
+foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
+function Check([bool]$Ok,[string]$Message){if(-not $Ok){throw $Message}}
+function Start-Owned([string]$Exe,[string[]]$Arguments,[switch]$Redirect){
+ $info=[Diagnostics.ProcessStartInfo]::new($Exe);$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+ if($Redirect){$info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true;$info.StandardInputEncoding=$utf8;$info.StandardOutputEncoding=$utf8}
+ foreach($arg in $Arguments){$info.ArgumentList.Add($arg)}
+ $p=[Diagnostics.Process]::Start($info);$script:owned.Add($p);return $p
+}
+function Stop-Owned([Diagnostics.Process]$Process){
+ if(-not $Process.HasExited){$Process.Kill($true)}
+ $exited=$Process.WaitForExit(3500);$script:cleanup.Add(@{pid=$Process.Id;exit_confirmed=$exited});Check $exited 'Owned process exit not confirmed'
+}
+if(-not $Worker){
+ if(Test-Path $OutputDir){throw 'New evidence directory required'}
+ [IO.Directory]::CreateDirectory($OutputDir)|Out-Null
+ $parent=& $verify --preflight|ConvertFrom-Json
+ Write-NewJson $parent (Join-Path $OutputDir 'parent-preflight.json')
+ Check $parent.input_desktop_accessible 'No interactive desktop'
+ $env:SVI_REMAINING_ROOT=$OutputDir
+ $plan=@{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$planned;scope='only additional parameters; existing56/15/fullCI reused by unchanged production source, not rerun or assumed passed here';static_helper_sha256=(Get-FileHash $formal).Hash;module_sha256=(Get-FileHash (Join-Path $env:SVI_REMAINING_MODULE_DIR 'out/main/remaining-modules.cjs')).Hash;physical_keyboard_verified=$false;audio_model_s5_status='not_run';inputs=@()}
+ $repo=Split-Path $desktop -Parent
+ foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
+ Write-NewJson $plan (Join-Path $OutputDir 'plan.json')
+ try{
+  $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir) -Redirect
+  $outTask=$workerProcess.StandardOutput.ReadToEndAsync();$errTask=$workerProcess.StandardError.ReadToEndAsync()
+  Check ($workerProcess.WaitForExit(1200000)) 'Supplemental worker exceeded20min; no success inferred'
+  Check ($outTask.Wait(2000) -and $errTask.Wait(2000)) 'Worker pipes did not finish'
+  [IO.File]::WriteAllText((Join-Path $OutputDir 'worker.stdout.txt'),$outTask.Result,$utf8)
+  [IO.File]::WriteAllText((Join-Path $OutputDir 'worker.stderr.txt'),$errTask.Result,$utf8)
+  Check ($workerProcess.ExitCode -eq 0) 'Additional parameters failed or blocked; preserve complete results'
+ }finally{foreach($p in $script:owned){try{Stop-Owned $p}catch{Write-Warning $_.Exception.Message}};Write-NewJson @($script:cleanup) (Join-Path $OutputDir 'parent-cleanup.json')}
+ exit 0
+}
+$preflight=& $verify --preflight|ConvertFrom-Json
+Check ($preflight.integrity_rid -eq 8192 -and $preflight.input_desktop_accessible) 'Actual Medium desktop required'
+Write-NewJson $preflight (Join-Path $OutputDir 'medium-preflight.json')
+$env:SVI_WINDOWS_PROBE='1'
+$script:native=Start-Owned $probe @() -Redirect
+$nativeErr=$script:native.StandardError.ReadToEndAsync();$script:nativeId=0
+$script:product=Start-Owned $formal @('--parent-pid',[string]$PID) -Redirect
+$productErr=$script:product.StandardError.ReadToEndAsync();$script:productId=0
+$log=[IO.StreamWriter]::new([IO.File]::Open((Join-Path $OutputDir 'calls.jsonl'),[IO.FileMode]::CreateNew),$utf8)
+$script:fileSequence=0;$script:fixtureId=0;$script:hostId=0
+$fixtureDir=Join-Path $OutputDir 'field-fixture';[IO.Directory]::CreateDirectory($fixtureDir)|Out-Null
+$fixtureProcess=Start-Owned $fixtureExe @('--probe-dir',$fixtureDir)
+function Read-Reply([Diagnostics.Process]$Process,[hashtable]$Request,[object]$ExpectedId=$null){
+ $Process.StandardInput.WriteLine(($Request|ConvertTo-Json -Depth 10 -Compress));$Process.StandardInput.Flush()
+ $task=$Process.StandardOutput.ReadLineAsync();Check ($task.Wait(6500) -and $null -ne $task.Result) 'Actual process did not respond; do not replay'
+ $reply=$task.Result|ConvertFrom-Json;if($null -eq $ExpectedId){$ExpectedId=$Request.id};Check ($reply.id -eq $ExpectedId) 'Wrong response id'
+ $log.WriteLine((@{process=$Process.Id;request=$Request;response=$reply}|ConvertTo-Json -Compress -Depth 20));$log.Flush();return $reply
+}
+function Native([string]$Action,[hashtable]$Data=@{}){$script:nativeId++;return Read-Reply $script:native (@{id=$script:nativeId;action=$Action}+$Data)}
+function Product([string]$Action,[hashtable]$Data=@{}){$script:productId++;return Read-Reply $script:product (@{id=$script:productId;action=$Action}+$Data)}
+function File-Rpc([string]$Folder,[hashtable]$Request){
+ $script:fileSequence++;$prefix=[string]$script:fileSequence
+ $tmp=Join-Path $Folder "$prefix.request.tmp";Write-NewJson $Request $tmp;[IO.File]::Move($tmp,(Join-Path $Folder "$prefix.request.json"))
+ $out=Join-Path $Folder "$prefix.response.json";$end=[DateTime]::UtcNow.AddSeconds(20)
+ while(-not (Test-Path $out)){Check ([DateTime]::UtcNow -lt $end) 'Owned fixture command deadline';Start-Sleep -Milliseconds 30}
+ $result=Get-Content -Raw $out|ConvertFrom-Json
+ if($result.PSObject.Properties.Name -contains 'error'){throw $result.error};return $result
+}
+function Field([string]$Action,[hashtable]$Data=@{}){return File-Rpc $fixtureDir (@{action=$Action}+$Data)}
+function Host-Rpc([string]$Action,[hashtable]$Data=@{}){return File-Rpc $script:hostFolder (@{action=$Action}+$Data)}
+function Wait-File([string]$File){$end=[DateTime]::UtcNow.AddSeconds(30);while(-not(Test-Path $File)){Check ([DateTime]::UtcNow -lt $end) 'Owned fixture readiness failed';Start-Sleep -Milliseconds 50}}
+function Focus-Field(){
+ $field=Field 'field' @{field='plain';initial='BEGIN React END';start=6;end=11}
+ Check ((Native 'probeFocus' @{fixture_pid=$field.pid}).focused) 'Owned input did not focus';return $field
+}
+function Case([string]$Id,[scriptblock]$Body){
+ $start=[DateTime]::UtcNow
+ try{$detail=& $Body;$script:results[$Id]=@{id=$Id;status='pass';observations=$detail;started_at=$start.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}}
+ catch{$script:results[$Id]=@{id=$Id;status=$(if($_.Exception.Message.StartsWith('BLOCKED:')){'blocked'}else{'fail'});error=$_.Exception.Message;started_at=$start.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}}
+ Write-Host "$Id $($script:results[$Id].status)"
+}
+function Open-Host([string]$Mode,[string]$UserDataDir){
+ $script:hostId++;$script:hostFolder=Join-Path $OutputDir "host-$($script:hostId)";[IO.Directory]::CreateDirectory($script:hostFolder)|Out-Null
+ [IO.Directory]::CreateDirectory($UserDataDir)|Out-Null
+ $script:hostProcess=Start-Owned $electron @((Join-Path $desktop 'native/windows/fixtures/remaining-electron.cjs'),$script:hostFolder,$UserDataDir,$Mode) -Redirect
+ $script:hostOut=$script:hostProcess.StandardOutput.ReadToEndAsync();$script:hostErr=$script:hostProcess.StandardError.ReadToEndAsync()
+ Wait-File (Join-Path $script:hostFolder 'ready.json')
+ $ready=Get-Content -Raw (Join-Path $script:hostFolder 'ready.json')|ConvertFrom-Json
+ Check ($ready.pid -eq $script:hostProcess.Id) 'Wrong integration process identity';return $ready
+}
+function Close-Host(){
+ if(-not $script:hostProcess.HasExited){$null=Host-Rpc 'quit'}
+ Check ($script:hostProcess.WaitForExit(5000)) 'Electron host exit not confirmed'
+ Check ($script:hostOut.Wait(1000) -and $script:hostErr.Wait(1000)) 'Electron host output did not finish'
+ [IO.File]::WriteAllText((Join-Path $OutputDir "host-$($script:hostId).stderr.txt"),$script:hostErr.Result,$utf8)
+ Check ($script:hostProcess.ExitCode -eq 0) 'Electron host failed'
+}
+function Dialog([string]$Action='inspect'){
+ $script:fileSequence++;$file=Join-Path $OutputDir "dialog-$($script:fileSequence).json"
+ $p=Start-Owned (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe') @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'remaining-dialog-ui.ps1'),'-TargetPid',[string]$script:hostProcess.Id,'-OwnerPid',[string]$PID,'-ExpectedExeSha256',(Get-FileHash $electron).Hash,'-OutputFile',$file,'-Action',$Action)
+ Check ($p.WaitForExit(15000) -and $p.ExitCode -eq 0 -and (Test-Path $file)) 'Owned native dialog inspection/action failed'
+ return Get-Content -Raw $file|ConvertFrom-Json
+}
+Add-Type @'
+using System;using System.Runtime.InteropServices;
+public static class RemainingWin32 {
+ [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessage(IntPtr hWnd,uint msg,IntPtr wParam,IntPtr lParam);
+ [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+}
+'@
+function Close-Main([object]$KnownState=$null){
+ $state=if($null -ne $KnownState){$KnownState}else{Host-Rpc 'state'};Check ($null -ne $state.main -and $state.pid -eq $script:hostProcess.Id) 'Exact owned Main unavailable'
+ Check ([RemainingWin32]::PostMessage([IntPtr]::new([long]$state.main.hwnd),0x10,[IntPtr]::Zero,[IntPtr]::Zero)) 'WM_CLOSE was not posted'
+}
+function Wait-Host([scriptblock]$Predicate,[int]$Budget=8000){$end=[DateTime]::UtcNow.AddMilliseconds($Budget);do{$state=Host-Rpc 'state';if(& $Predicate $state){return $state};Start-Sleep -Milliseconds 40}while([DateTime]::UtcNow -lt $end);throw 'Production module state did not reach the independent expectation'}
+try{
+ Wait-File (Join-Path $fixtureDir 'ready.json')
+ $null=Native 'ping';$permission=Product 'permission';Check ($permission.supported -and $permission.trusted) 'Formal helper unavailable'
+ Case 'R10-invalid-fields' {
+  $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
+  $bad=@(
+   @{action='permission';prompt='true'},@{action='permission';id='1'},@{action='permission';id=1.5},@{action='permission';id=9007199254740992L},
+   @{action='validate'},@{action='validate';target=''},@{action='validate';target=('a'*257)},@{action='validate';target=1},
+   @{action='release';target=$true},@{action='release';target=@('a')},@{action='capture';restoreFocus=1},
+   @{action='insert';target='x';insertion_id='a';text=''},@{action='insert';insertion_id='a';text='x'},
+   @{action='insertCurrent';insertion_id='';text='x'},@{action='insertCurrent';insertion_id=('a'*257);text='x'},@{action='insertCurrent';insertion_id=2;text='x'},
+   @{action='insertCurrent';insertion_id='a';text=$null},@{action='insertCurrent';insertion_id='a';text=@('x')},@{action='insertCurrent';insertion_id='a';text=('x'*32001)},
+   @{action='inputBounds';unknown_field='x'},@{action='unknown'},@{action=2}
+  );$rows=@();$i=0
+  foreach($body in $bad){$i++;if(-not $body.ContainsKey('id')){$body.id=100000+$i};$responseId=if($body.id -is [string] -or $body.id -is [double] -or $body.id -gt 9007199254740991L){0}else{$body.id};$response=Read-Reply $script:product $body $responseId;Check ($response.error.code -eq 'NATIVE_REQUEST_INVALID' -and $response.error.effect -eq 'none') 'Malformed field reached dispatch';$rows+=@{parameter=$i;input=$body;response=$response}}
+  $after=Native 'probeClipboardState';$actual=Field 'fieldState'
+  Check ($before.sequence -eq $after.sequence -and $actual.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $actual.enterCount -eq 0) 'Invalid fields caused target or clipboard side effects'
+  return @{planned_parameters=$bad.Count;rows=$rows;actual=$actual;clipboard_unchanged=$true}
+ }
+ Case 'R10-actions' {
+  $field=Focus-Field;$capture=Product 'capture';Check ($capture.target -is [string]) 'Capture target unavailable'
+  $valid=Product 'validate' @{target=$capture.target;restoreFocus=$false};Check $valid.valid 'Fresh target invalid'
+  $bounds=Product 'inputBounds';Check ($bounds.available -and $bounds.coordinateSpace -eq 'physical' -and $bounds.bounds.width -gt 0 -and $bounds.bounds.height -gt 0) 'Input bounds flat contract differs'
+  $one=Product 'release' @{target=$capture.target};$two=Product 'release' @{target=$capture.target};$after=Product 'validate' @{target=$capture.target}
+  Check ($one.released -and $two.released -and -not $after.valid) 'Release lifecycle not idempotent/invalidated'
+  $maxTarget=Product 'release' @{target=('x'*256)};Check $maxTarget.released 'Legal256-byte target was rejected'
+  $maxInsertion=Product 'insert' @{target='missing';insertion_id=('x'*256);text='MUST NOT WRITE'};Check ($maxInsertion.status -eq 'failed' -and $maxInsertion.code -eq 'TARGET_CHANGED' -and $maxInsertion.effect -eq 'none') 'Legal256-byte insertion identity did not reach zero-write validation'
+  $maximum=Read-Reply $script:product @{id=9007199254740991L;action='permission';prompt=$false};Check $maximum.trusted 'Max safe numeric id rejected'
+  return @{capture=$capture;validate=$valid;bounds=$bounds;first_release=$one;second_release=$two;after=$after;max_id=$maximum;max_target=$maxTarget;max_insertion_identity=$maxInsertion}
+ }
+ Case 'R03-released-target' {
+  $field=Focus-Field;$null=Native 'probeSeedClipboard';$capture=Product 'capture';$null=Product 'release' @{target=$capture.target};$before=Native 'probeClipboardState'
+  $result=Product 'insert' @{target=$capture.target;insertion_id='released-target';text='MUST NOT WRITE';restoreFocus=$true};$after=Native 'probeClipboardState';$actual=Field 'fieldState'
+  Check ($result.status -eq 'failed' -and $result.effect -eq 'none' -and $before.sequence -eq $after.sequence -and $actual.chords.Count -eq 0 -and $actual.value -ceq 'BEGIN React END') 'Released target produced a side effect'
+  return @{result=$result;actual=$actual;clipboard_unchanged=$true}
+ }
+ Case 'R06-disabled-after-capture' {
+  try{
+  $field=Focus-Field;$capture=Product 'capture';$prepared=Field 'setOwnedPlainDisabled' @{disabled=$true};$info=Native 'inspectPoint' @{fixture_pid=$field.pid;x=$field.point.x;y=$field.point.y}
+  Check ($prepared.disabled -and $info.class -eq 'disabled') 'Actual UIA-disabled precondition missing'
+  $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState';$result=Product 'insert' @{target=$capture.target;insertion_id='actual-disabled';text='MUST NOT WRITE';restoreFocus=$true};$after=Native 'probeClipboardState';$actual=Field 'fieldState'
+  Check ($result.status -eq 'failed' -and $result.effect -eq 'none' -and $before.sequence -eq $after.sequence -and $actual.fields.plain.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $actual.enterCount -eq 0) 'Disabled captured target accepted or changed clipboard/target'
+  return @{actual_disabled=$prepared;uia=$info;result=$result;actual=$actual;clipboard_unchanged=$true}
+  }finally{$null=Field 'setOwnedPlainDisabled' @{disabled=$false}}
+ }
+ Case 'R10-max-utf16' {
+  # Use a fresh classic Edit window rather than forcing a DOM value or lowering verification.
+  $file=Join-Path $OutputDir 'max-utf16.txt';[IO.File]::WriteAllText($file,'BEGIN React END',$utf8)
+  $notepad=Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($file)
+  Check ((Native 'probeFocus' @{fixture_pid=$notepad.Id}).focused) 'Owned Notepad unavailable'
+  $null=Native 'probeSelect' @{fixture_pid=$notepad.Id;start=6;length=5};$null=Native 'probeSeedClipboard'
+  $text='🙂'*16000;Check ($text.Length -eq 32000) 'Frozen UTF16 boundary differs'
+  $result=Product 'insertCurrent' @{insertion_id='max-utf16';text=$text};$actual=Native 'capture' @{fixture_pid=$notepad.Id}
+  Check ($result.status -eq 'inserted' -and $result.observable -and $actual.readback.text -ceq "BEGIN $text END" -and $actual.readback.caret_utf16 -eq 32006 -and $actual.readback.selection_utf16_len -eq 0) 'Legal32000 UTF16 was not strictly inserted'
+  Stop-Owned $notepad;return @{result=$result;utf16_units=32000;actual_utf16_len=$actual.readback.text.Length;caret=$actual.readback.caret_utf16;selection=$actual.readback.selection_utf16_len}
+ }
+ Case 'R09-capacity-10000' {
+  $field=Focus-Field;$child=Start-Owned $formal @('--parent-pid',[string]$PID) -Redirect;$err=$child.StandardError.ReadToEndAsync()
+  try{
+   $first=Read-Reply $child @{id=1;action='insertCurrent';insertion_id='first-written';text='中文🙂'};Check ($first.status -eq 'inserted') 'Capacity sentinel was not actually written'
+   $before=Native 'probeClipboardState';$watch=[Diagnostics.Stopwatch]::StartNew();$count=0
+   foreach($i in 2..10000){Check ($watch.ElapsedMilliseconds -lt 180000) 'BLOCKED: capacity population exceeded3min; no pass';$reply=Read-Reply $child @{id=$i;action='insert';target='missing';insertion_id="capacity-$i";text='MUST NOT WRITE'};Check ($reply.status -eq 'failed' -and $reply.effect -eq 'none' -and $reply.code -eq 'TARGET_CHANGED') 'Capacity population differs from frozen zero-write oracle';$count++;if($i%1000 -eq 0){Write-NewJson @{identities=$i;planned=10000;elapsed_ms=$watch.ElapsedMilliseconds} (Join-Path $OutputDir "capacity-progress-$i.json")}}
+   $full=Read-Reply $child @{id=10001;action='insert';target='missing';insertion_id='overflow';text='MUST NOT WRITE'}
+   $again=Read-Reply $child @{id=10002;action='insertCurrent';insertion_id='first-written';text='MUST NOT WRITE'}
+   $after=Native 'probeClipboardState';$actual=Field 'fieldState'
+   Check ($full.code -eq 'ZERO_WRITE' -and $full.effect -eq 'none' -and $again.status -eq 'unverified' -and $again.effect -eq 'unknown' -and $actual.chords.Count -eq 1 -and $actual.enterCount -eq 0 -and $actual.value -ceq 'BEGIN 中文🙂 END' -and $before.sequence -eq $after.sequence) 'Full execution table evicted/replayed or changed target/clipboard'
+   return @{zero_write_population=$count;elapsed_ms=$watch.ElapsedMilliseconds;overflow=$full;old_written_identity=$again;actual=$actual;clipboard_unchanged=$true}
+  }finally{Stop-Owned $child;Check ($err.Wait(1000)) 'Capacity helper stderr not closed'}
+ }
+ foreach($newline in @('lf','crlf')){
+  Case "R01-chrome-textarea-$newline" {
+   $chrome=@((Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),(Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe'))|Where-Object{Test-Path $_}|Select-Object -First 1
+   Check ([bool]$chrome) 'BLOCKED: owned Chrome unavailable'
+   $uri=[Uri]::new((Join-Path $desktop 'native/windows/fixtures/chrome.html')).AbsoluteUri+'?kind=textarea'
+   $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
+   $target=Start-Owned $chrome @("--user-data-dir=$(Join-Path $OutputDir "chrome-$newline")",'--no-first-run','--no-default-browser-check','--disable-sync',"--app=$uri","--remote-debugging-port=$port",'--remote-debugging-address=127.0.0.1')
+   try{
+    & node (Join-Path $PSScriptRoot 'chrome-ready.cjs') $port $uri 45000 (Join-Path $OutputDir "chrome-$newline-ready.json");Check ($LASTEXITCODE -eq 0) 'Cold Chrome DOM not ready'
+    Check ((Native 'probeFocus' @{fixture_pid=$target.Id}).focused) 'Chrome foreground not acquired';$null=Native 'probeSelect' @{fixture_pid=$target.Id;start=6;length=5}
+    $baseline=Native 'capture' @{fixture_pid=$target.Id};Check ($baseline.readback.text -ceq 'BEGIN React END' -and $baseline.readback.caret_utf16 -eq 6 -and $baseline.readback.selection_utf16_len -eq 5) 'BLOCKED: readable textarea baseline not acquired; this group is newline behavior, not the separate cold-UIA case'
+    $text=if($newline -eq 'lf'){"中文🙂`nDocker"}else{"中文🙂`r`nDocker"};$null=Native 'probeSeedClipboard'
+    $result=Product 'insertCurrent' @{insertion_id="chrome-$newline";text=$text};$actual=Native 'capture' @{fixture_pid=$target.Id}
+    $expected="BEGIN 中文🙂`nDocker END"
+    Check ($actual.readback.text -ceq $expected -and $actual.readback.caret_utf16 -eq 17 -and $actual.readback.selection_utf16_len -eq 0) 'Actual textarea newline/caret differs from frozen LF oracle'
+    if($newline -eq 'lf'){Check ($result.status -eq 'inserted' -and $result.effect -eq 'written' -and $result.observable) 'Strict LF verification failed'}else{Check ($result.status -eq 'unverified' -and $result.effect -eq 'unknown' -and -not $result.observable) 'CRLF conversion was incorrectly called strict insertion'}
+    return @{raw_newline=$newline;result=$result;actual=$actual;expected_raw_lf=$expected}
+   }finally{Stop-Owned $target}
+  }
+ }
+ $trayProfile=Join-Path $OutputDir 'tray-profile';$ready=Open-Host 'normal' $trayProfile
+ Case 'R23-window-concurrency' {$actual=Host-Rpc 'concurrentWindows';Check (@($actual.ids|Select-Object -Unique).Count -eq 1 -and $actual.state.main.renderer_id -eq $ready.main.renderer_id -and $actual.state.main_window_count -eq 1) 'Production module created duplicate Main windows';return $actual}
+ foreach($mode in @('crash','timeout','invalidate')){
+  $caseId=switch($mode){'crash'{'R09-bridge-crash'}'timeout'{'R09-bridge-timeout'}default{'R08-bridge-invalidate'}}
+  Case $caseId {
+   $prepared=Host-Rpc 'bridgePrepare';Check $prepared.permission.trusted 'Real production bridge did not initialize'
+   $child=Get-CimInstance Win32_Process -Filter "ProcessId=$($prepared.pid)";Check ($child.ParentProcessId -eq $script:hostProcess.Id -and (Get-FileHash $child.ExecutablePath).Hash -eq (Get-FileHash $formal).Hash) 'Bridge did not launch the frozen formal child'
+   $field=Focus-Field;$null=Native 'probeSeedClipboard';$null=Host-Rpc 'bridgeWrite' @{mode=$mode}
+   $end=[DateTime]::UtcNow.AddSeconds(3);do{$actual=Field 'fieldState';if($actual.chords.Count -eq 1 -and $actual.value -ceq 'BEGIN 中文🙂 END'){break};Start-Sleep -Milliseconds 20}while([DateTime]::UtcNow -lt $end)
+   Check ($actual.chords.Count -eq 1 -and $actual.value -ceq 'BEGIN 中文🙂 END') 'Fault was not acquired after actual target consumption'
+   if($mode -eq 'crash'){$killed=Host-Rpc 'bridgeKill';Check $killed.killed 'Owned child was not killed'}elseif($mode -eq 'invalidate'){$null=Host-Rpc 'bridgeInvalidate'}
+   $settled=Wait-Host {param($s) $null -ne $s.pending -and $s.pending.status -eq 'rejected'} 9000
+   $expectedCode=switch($mode){'crash'{'NATIVE_DISCONNECTED'}'timeout'{'NATIVE_TIMEOUT'}default{'NATIVE_INVALIDATED'}}
+   Check ($settled.pending.code -eq $expectedCode -and $settled.pending.effect -eq 'unknown') 'Actual bridge lost write certainty or replayed'
+   if($mode -eq 'timeout'){Check ($settled.pending.elapsed_ms -ge 4900 -and $settled.pending.elapsed_ms -lt 8000) 'Five-second bridge deadline differed'}
+   $next=Host-Rpc 'bridgeRestart';Check ($next.permission.trusted -and $next.pid -ne $prepared.pid) 'Bridge did not start a distinct helper after failure'
+   $final=Field 'fieldState';Check ($final.chords.Count -eq 1 -and $final.enterCount -eq 0 -and $final.value -ceq 'BEGIN 中文🙂 END') 'Fresh helper replayed old work'
+   $done=Host-Rpc 'bridgeDone';Check (@($done.children|Where-Object{-not $_.exit_confirmed}).Count -eq 0) 'Owned native child exit was not confirmed'
+   return @{prepared=$prepared;pending=$settled.pending;restarted_pid=$next.pid;actual=$final;cleanup=$done.children;scope='real production class/helper; stdout delivery paused after permission as explicit transport fault, no fabricated business result'}
+  }
+ }
+ Case 'R06-bridge-own-window' {
+  $prepared=Host-Rpc 'bridgePrepare';$shown=Host-Rpc 'show';Check ((Native 'probeFocus' @{fixture_pid=$shown.pid}).focused) 'Owned integration Main not foreground'
+  $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState';$result=Host-Rpc 'bridgeOwnWindow';$after=Native 'probeClipboardState';$done=Host-Rpc 'bridgeDone'
+  Check ($result.result.status -eq 'failed' -and $result.result.effect -eq 'none' -and $before.sequence -eq $after.sequence) 'Actual parent window received a bridge paste/clipboard write'
+  return @{result=$result.result;clipboard_unchanged=$true;cleanup=$done.children}
+ }
+ Case 'R32-production-hud-15' {
+  $field=Focus-Field;$before=Native 'foreground';$samples=@()
+  foreach($i in 1..15){foreach($state in @('show','move','hide')){$observed=Host-Rpc 'hud' @{state=$state;iteration=$i};$focus=Native 'foreground';Check ($focus.root.hwnd -eq $before.root.hwnd -and $focus.root.pid -eq $before.root.pid -and -not $observed.hud.focused) 'Production HUD stole actual foreground';$samples+=@{iteration=$i;state=$state;hud=$observed.hud;foreground=$focus.root}}}
+  Check (-not (Host-Rpc 'state').hud.visible) 'Final production HUD remained visible';return @{cycles=15;observations=$samples;scope='actual production window module and renderer; no recording or multiscreen claim'}
+ }
+ Case 'R22-first-close-persist' {
+  $null=Host-Rpc 'show';$before=Host-Rpc 'state';Check (-not $before.acknowledged) 'First-close profile was not new'
+  Close-Main $before;Close-Main $before;$dialog=Dialog;Check ($dialog.dialogs.Count -eq 1) 'First/repeated close did not leave exactly one native notice'
+  $waiting=@{main_visible=[RemainingWin32]::IsWindowVisible([IntPtr]::new([long]$before.main.hwnd));ack_file_present=(Test-Path (Join-Path $trayProfile 'tray-state.json'))};Check ($waiting.main_visible -and -not $waiting.ack_file_present) 'Window hid/acknowledged before actual user notice confirmation'
+  $ack=Dialog 'acknowledge';$hidden=Wait-Host {param($s) -not $s.main.visible -and $s.acknowledged}
+  $null=Host-Rpc 'show';Close-Main;$again=Wait-Host {param($s) -not $s.main.visible};$noDialog=Dialog
+  Check ($noDialog.dialogs.Count -eq 0 -and $again.main.renderer_id -eq $before.main.renderer_id -and -not $again.main.background_throttling) 'Second close destroyed/throttled renderer or repeated notice'
+  return @{before=$before;native_notice=$dialog;before_ack=$waiting;actual_ack=$ack;first_hidden=$hidden;second_hidden=$again;second_dialog=$noDialog}
+ }
+ Case 'R23-window-rebuild' {$actual=Host-Rpc 'destroyAndRebuild';Check (@($actual.ids|Select-Object -Unique).Count -eq 1 -and $actual.ids[0] -ne $actual.old_id -and -not $actual.state.main.destroyed -and $actual.state.main_window_count -eq 1) 'Production window module failed unique rebuild';return $actual}
+ Close-Host
+ $restarted=Open-Host 'restart' $trayProfile
+ Case 'R22-restart-close' {Check $restarted.acknowledged 'Close notice not persisted across actual Electron restart';Close-Main;$hidden=Wait-Host {param($s) -not $s.main.visible};$dialog=Dialog;Check ($dialog.dialogs.Count -eq 0) 'Persistent notice repeated after restart';return @{initial=$restarted;hidden=$hidden;dialog=$dialog}}
+ Close-Host
+ $failure=Open-Host 'persist-failure' (Join-Path $OutputDir 'tray-failure-profile')
+ Case 'R22-write-failure' {
+  Close-Main;$first=Dialog;Check ($first.dialogs.Count -eq 1) 'Expected actual initial notice';$ack=Dialog 'acknowledge'
+  $errorDialog=Dialog;Check ($errorDialog.dialogs.Count -eq 1) 'Actual filesystem failure did not show its recovery dialog';$errorAck=Dialog 'error-acknowledge';$state=Host-Rpc 'state'
+  Check ($state.main.visible -and -not $state.acknowledged -and -not $state.ack_file_present) 'Persistence failure hid Main or falsely acknowledged'
+  return @{first=$first;actual_ack=$ack;filesystem_error_dialog=$errorDialog;error_ack=$errorAck;final=$state;fault='owned fresh tray-state.json.tmp is an actual directory; write fails, no mocked API'}
+ }
+ Close-Host
+}catch{Write-NewJson @{error=$_.Exception.Message} (Join-Path $OutputDir 'worker-failure.json')}
+finally{
+ try{$null=Field 'quit'}catch{Write-Warning 'Target fixture quit did not acknowledge'}
+ foreach($p in $script:owned){try{Stop-Owned $p}catch{Write-Warning $_.Exception.Message}}
+ $log.Dispose();Write-NewJson @($script:cleanup) (Join-Path $OutputDir 'worker-cleanup.json')
+ if($nativeErr.Wait(1000)){[IO.File]::WriteAllText((Join-Path $OutputDir 'probe.stderr.txt'),$nativeErr.Result,$utf8)}
+ if($productErr.Wait(1000)){[IO.File]::WriteAllText((Join-Path $OutputDir 'formal.stderr.txt'),$productErr.Result,$utf8)}
+ $rows=@($script:results.Values);$cleanupOk=@($script:cleanup|Where-Object{-not $_.exit_confirmed}).Count -eq 0
+ Write-NewJson @{source_sha=$env:GITHUB_SHA;planned=$planned.Count;cases=$rows;cleanup_confirmed=$cleanupOk;scope='supplemental L2 only; original all40/S5 not passed here'} (Join-Path $OutputDir 'remaining-cases.json')
+}
+if(@($script:results.Values|Where-Object{$_.status -ne 'pass'}).Count -gt 0 -or -not $cleanupOk){exit 1}
+exit 0

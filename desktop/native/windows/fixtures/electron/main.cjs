@@ -189,6 +189,11 @@ async function command(request) {
           fields:Object.fromEntries(['plain','editor'].map(id=>{const f=document.getElementById(id);return [id,{value:f.value,start:f.selectionStart,end:f.selectionEnd}]})),
           canvasValue:window.canvasValue, canvasPasteCount:window.canvasPasteCount, enterCount:window.enterCount};
       })()`);
+    case 'setOwnedPlainDisabled': {
+      if(process.env.GITHUB_ACTIONS!=='true'||typeof request.disabled!=='boolean')throw Error('Disposable field preparation only');
+      // Actual disabled state after an explicit target has already been captured.
+      return main.webContents.executeJavaScript(`(()=>{const el=document.getElementById('plain');el.disabled=${JSON.stringify(request.disabled)};return {disabled:el.disabled,value:el.value,paste_count:window.pasteChords.length,enter_count:window.enterCount};})()`);
+    }
     case 'blockMain': {
       if (!/^product-[a-z-]+$/.test(request.label) || !Number.isSafeInteger(request.duration_ms)
         || request.duration_ms < 1000 || request.duration_ms > 2500) throw new Error('bounded fixture block required');

@@ -23,8 +23,10 @@
 | S1 正式需求修订 | 已整理并复核 | [WIN-01～12](02-prd/windows-v002-requirements.md)与 PRD/BR-07/11 对齐；需求用户评审依据为本人已确认的范围与 Q1–Q7，本次不追加 Windows 修改观察 |
 | S2 Windows 技术设计 | 已整理并复核 | [技术设计](03-architecture/windows-v002-design.md)对齐实际扁平 JSONL、一次执行、平台能力、生命周期、坐标与三端责任；S0 首次关闭确认时序同步复核 |
 | S3 Windows 测试用例 | 已生成并复核 | [40 条专项用例](04-test/test-cases-windows-v002.md)覆盖 12/12 WIN，数据、独立参数与 L1/L2/L3 判据完整；物理键盘/安装包/真实闭环要求保留 |
-| S4 正式开发 | 主体实现及本轮自动门禁通过 | 正式 helper、平台权限 UI、托盘/单实例/后台自启、坐标、打包及首次凭据持久化已实现。[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40967667984)通过：Desktop Mac/Windows 各716项、Rust15项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项及 Admin 浏览器9组另已通过。[本轮 Windows 完整验证](https://github.com/uprxiao/SmartVoice/actions/runs/40967683045)通过：56/56正式原生参数、9/9技术阻断、15/15实际界面组、NSIS两轮安装/卸载/重装、后台恢复与真实 Main/preload RPC。其余物理/真实业务参数保留，未放行完整 S5。见下方证据及[三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
+| S4 正式开发 | 主体实现，剩余参数补测中 | 正式 helper、平台权限 UI、托盘/单实例/后台自启、坐标、打包及首次凭据持久化已实现。[完整 CI](https://github.com/uprxiao/SmartVoice/actions/runs/40967667984)通过：Desktop Mac/Windows 各716项、Rust15项、Admin93项和 Server/自然时钟回归；真实 PostgreSQL/API 21项及 Admin 浏览器9组另已通过。[本轮 Windows 完整验证](https://github.com/uprxiao/SmartVoice/actions/runs/40967683045)通过：56/56正式原生参数、9/9技术阻断、15/15实际界面组、NSIS两轮安装/卸载/重装、后台恢复与真实 Main/preload RPC。其余物理/真实业务参数保留，未放行完整 S5。见下方证据及[三端责任](03-architecture/windows-v002-design.md#构建部署与三端责任) |
 | S5 真机验收 | 未开始 | Windows x64 自测；V-04 物理按键及 V-05/06/11/12/13/15 和目标安装包均须留证 |
+
+接续审计（2026-10-30）：剩余38条中仍有可自动补测参数。前轮完整CI、56项原生参数和15组界面联调通过，代表已执行批次通过；协议边界、真实桥故障、托盘提示持久化与生产HUD等正在补测。按原S3层级逐项复核，不把全部partial归为需要用户手测，也不额外挂真机条件。
 
 当前验证依据（分母分别登记，不合并为40条全部通过）：
 

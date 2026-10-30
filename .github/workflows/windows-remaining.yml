@@ -1,0 +1,85 @@
+name: Windows remaining parameter checks
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  remaining:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set isolated directories
+        shell: pwsh
+        run: |
+          "CARGO_TARGET_DIR=$env:RUNNER_TEMP/svi-rust-target" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_PROBE_BUNDLE=$env:RUNNER_TEMP/svi-remaining-fixture" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_REMAINING_ROOT=$env:RUNNER_TEMP/svi-remaining-results" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_REMAINING_MODULE_DIR=$env:RUNNER_TEMP/svi-remaining-module-build" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/svi-rust-target
+          key: ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-
+      - name: Compile unchanged native code for additional integration checks
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path desktop/native/windows/Cargo.toml --check
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          cargo build --locked --release --bins --manifest-path desktop/native/windows/Cargo.toml
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          cargo build --locked --release --target x86_64-pc-windows-msvc --config 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]' --manifest-path desktop/native/windows/Cargo.toml --bin smartvoiceinput-input
+          exit $LASTEXITCODE
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install locked fixture runtime
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          pnpm exec electron-builder --win --x64 --dir --config native/windows/fixtures/electron-builder.cjs --publish never
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          pnpm build
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          node native/windows/scripts/build-remaining-modules.cjs
+          exit $LASTEXITCODE
+      - name: Validate scripts before new parameters
+        shell: pwsh
+        run: |
+          Get-ChildItem desktop/native/windows/scripts/*.ps1 | ForEach-Object {
+            $tokens=$null;$parseErrors=$null
+            $null=[Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$parseErrors)
+            if($parseErrors.Count){throw ($parseErrors|Out-String)}
+          }
+          node --check desktop/native/windows/fixtures/remaining-electron.cjs
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Run only supplemental parameter groups
+        shell: pwsh
+        run: ./desktop/native/windows/scripts/remaining-probes.ps1 -OutputDir $env:SVI_REMAINING_ROOT
+      - name: Preserve all supplemental outcomes including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-remaining-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/svi-remaining-results/*.json
+            ${{ runner.temp }}/svi-remaining-results/*.jsonl
+            ${{ runner.temp }}/svi-remaining-results/*.txt
+            ${{ runner.temp }}/svi-remaining-results/*/ready.json
+            ${{ runner.temp }}/svi-remaining-results/*/host-failure.json
+            ${{ runner.temp }}/svi-remaining-results/*/*.response.json
+          if-no-files-found: warn
+          retention-days: 7

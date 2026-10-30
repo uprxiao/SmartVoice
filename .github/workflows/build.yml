@@ -11,12 +11,19 @@ on:
         description: Run only isolated Windows safeStorage controls (no installer or product pass)
         type: boolean
         default: false
+      remaining_only:
+        description: Run only additional uncovered Windows parameters (not full installer gate)
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       full_matrix:
         type: boolean
         default: false
       credential_controls_only:
+        type: boolean
+        default: false
+      remaining_only:
         type: boolean
         default: false
       require_mac_signing:
@@ -43,12 +50,16 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   windows-probes:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only && !inputs.remaining_only
     uses: ./.github/workflows/windows-verify.yml
 
   windows-credentials:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.credential_controls_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.credential_controls_only && !inputs.remaining_only
     uses: ./.github/workflows/windows-credentials.yml
+
+  windows-remaining:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.remaining_only
+    uses: ./.github/workflows/windows-remaining.yml
 
   package:
     if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2' || inputs.full_matrix
