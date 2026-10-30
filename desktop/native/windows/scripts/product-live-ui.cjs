@@ -37,6 +37,17 @@ async function evaluate(expression){
   if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);
   return result.result.value;
 }
+// Startup can expose the final URL before the provisional JS context is replaced.
+// Only these read-only startup observations may retry; input actions never do.
+async function startupRead(expression){
+  const end=Date.now()+15000;
+  while(true){
+    try{return await evaluate(expression);}catch(error){
+      if(!/Execution context was destroyed|Cannot find context with specified id|Inspected target navigated/.test(error.message)||Date.now()>=end)throw error;
+      report.startup_context_retries=(report.startup_context_retries||0)+1;await pause(100);
+    }
+  }
+}
 async function until(expression,timeout=15000){
   const end=Date.now()+timeout;
   while(Date.now()<end){if(await evaluate(expression))return;await pause(100);}
@@ -178,11 +189,17 @@ async function privacy(){
   socket=new WebSocket(page.webSocketDebuggerUrl);
   socket.on('message',bytes=>{const data=JSON.parse(bytes.toString());if(data.method==='Inspector.targetCrashed')actualCrashEvent=true;if(data.method==='Network.responseReceived'&&new URL(data.params.response.url).pathname==='/api/auth/login')loginResponses.push(data.params.response.status);const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(Error(data.error.message)):request.resolve(data.result);});
   await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});
+  report.infrastructure_stage='read-only-startup';
+  const readyEnd=Date.now()+15000;
+  while(!await startupRead(`document.readyState==='complete'&&${adminPhase?'true':"typeof window.electronAPI?.invoke==='function'"}`)){
+    check(Date.now()<readyEnd,'Owned initial document/bridge did not become ready');await pause(100);
+  }
   let info;
   if(!adminPhase){
-    info=await evaluate(`window.electronAPI.invoke('app.info')`); // Read-only Main API precondition before credentials.
+    info=await startupRead(`window.electronAPI.invoke('app.info')`); // Read-only Main API precondition before credentials.
     check(info.platform==='win32'&&info.apiBaseUrl===fixture.origin,'Refusing credentials outside the owned loopback Main service');
   }
+  report.infrastructure_stage='phase-'+phase;
   if(phase==='journal-arm'){
     const seeded=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'journal-seed.json'),'utf8')),targets=await startOwnedProbe();
     await until(`Boolean(document.querySelector('input[type=email]'))`);await fill('input[type=email]',email);await fill('input[type=password]',credentials.password);await click('form button[type=submit]');
