@@ -1,6 +1,10 @@
 name: Windows remaining parameter checks
 on:
   workflow_call:
+    inputs:
+      suite:
+        type: string
+        default: standard
 permissions:
   contents: read
 jobs:
@@ -36,6 +40,15 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           cargo build --locked --release --target x86_64-pc-windows-msvc --config 'target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]' --manifest-path desktop/native/windows/Cargo.toml --bin smartvoiceinput-input
           exit $LASTEXITCODE
+      - name: Compile opted-in clipboard failure controls
+        if: inputs.suite == 'clipboard'
+        shell: pwsh
+        run: |
+          $messages=@(& cargo test --locked --lib --no-run --message-format=json --target x86_64-pc-windows-msvc --manifest-path desktop/native/windows/Cargo.toml)
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $executables=@($messages | ForEach-Object { $message=$_|ConvertFrom-Json; if($message.reason -eq 'compiler-artifact' -and $message.profile.test -and $message.executable){$message.executable} })
+          if($executables.Count -ne 1){throw 'Expected exactly one real Windows library test executable'}
+          "SVI_CLIPBOARD_UNIT_EXE=$($executables[0])" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: pnpm/action-setup@v4
         with:
           version: 10.27.0
@@ -49,6 +62,8 @@ jobs:
         shell: pwsh
         run: |
           pnpm install --frozen-lockfile
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          node node_modules/electron/install.js
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           pnpm exec electron-builder --win --x64 --dir --config native/windows/fixtures/electron-builder.cjs --publish never
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
@@ -68,7 +83,9 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Run only supplemental parameter groups
         shell: pwsh
-        run: ./desktop/native/windows/scripts/remaining-probes.ps1 -OutputDir $env:SVI_REMAINING_ROOT
+        env:
+          SVI_REMAINING_SUITE: ${{ inputs.suite }}
+        run: ./desktop/native/windows/scripts/remaining-probes.ps1 -OutputDir $env:SVI_REMAINING_ROOT -Suite $env:SVI_REMAINING_SUITE
       - name: Preserve all supplemental outcomes including failures
         if: always()
         uses: actions/upload-artifact@v4

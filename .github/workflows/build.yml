@@ -15,6 +15,11 @@ on:
         description: Run only additional uncovered Windows parameters (not full installer gate)
         type: boolean
         default: false
+      remaining_suite:
+        description: Supplementary scope (standard parameters or controlled clipboard failures)
+        type: choice
+        options: [standard, clipboard]
+        default: standard
   workflow_call:
     inputs:
       full_matrix:
@@ -26,6 +31,9 @@ on:
       remaining_only:
         type: boolean
         default: false
+      remaining_suite:
+        type: string
+        default: standard
       require_mac_signing:
         type: boolean
         default: false
@@ -60,6 +68,8 @@ jobs:
   windows-remaining:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.remaining_only
     uses: ./.github/workflows/windows-remaining.yml
+    with:
+      suite: ${{ inputs.remaining_suite }}
 
   package:
     if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2' || inputs.full_matrix

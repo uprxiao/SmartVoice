@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OutputDir,[switch]$Worker)
+param([Parameter(Mandatory=$true)][string]$OutputDir,[switch]$Worker,[ValidateSet('standard','clipboard')][string]$Suite='standard')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($env:GITHUB_ACTIONS -ne 'true'){throw 'Disposable CI only'}
@@ -13,13 +13,14 @@ $utf8=[Text.UTF8Encoding]::new($false)
 $script:owned=[Collections.Generic.List[Diagnostics.Process]]::new()
 $script:cleanup=[Collections.Generic.List[object]]::new()
 $script:results=[ordered]@{}
-$planned=@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')
+$planned=if($Suite -eq 'clipboard'){@('R14-snapshot-publication-race','R14-partial-write-restore','R14-partial-and-restore-failure')}else{@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R04-notepad-truncated-uia','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')}
 foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
 function Check([bool]$Ok,[string]$Message){if(-not $Ok){throw $Message}}
-function Start-Owned([string]$Exe,[string[]]$Arguments,[switch]$Redirect){
+function Start-Owned([string]$Exe,[string[]]$Arguments,[switch]$Redirect,[hashtable]$ExtraEnvironment=@{}){
  $info=[Diagnostics.ProcessStartInfo]::new($Exe);$info.UseShellExecute=$false;$info.CreateNoWindow=$true
  if($Redirect){$info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true;$info.StandardInputEncoding=$utf8;$info.StandardOutputEncoding=$utf8}
  foreach($arg in $Arguments){$info.ArgumentList.Add($arg)}
+ foreach($key in $ExtraEnvironment.Keys){$info.Environment[$key]=[string]$ExtraEnvironment[$key]}
  $p=[Diagnostics.Process]::Start($info);$script:owned.Add($p);return $p
 }
 function Stop-Owned([Diagnostics.Process]$Process){
@@ -34,11 +35,15 @@ if(-not $Worker){
  Check $parent.input_desktop_accessible 'No interactive desktop'
  $env:SVI_REMAINING_ROOT=$OutputDir
  $plan=@{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$planned;scope='only additional parameters; existing56/15/fullCI reused by unchanged production source, not rerun or assumed passed here';static_helper_sha256=(Get-FileHash $formal).Hash;module_sha256=(Get-FileHash (Join-Path $env:SVI_REMAINING_MODULE_DIR 'out/main/remaining-modules.cjs')).Hash;physical_keyboard_verified=$false;audio_model_s5_status='not_run';inputs=@()}
+ $plan.suite=$Suite;$plan.electron_image_present=Test-Path $electron
+ $plan.fault_controls_absent_from_formal_exe=-not ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($formal)).Contains('SVI_CLIPBOARD_FAULT_TESTS'))
+ Check $plan.fault_controls_absent_from_formal_exe 'Fault control leaked into formal helper'
+ if($Suite -eq 'clipboard'){$plan.test_executable_sha256=(Get-FileHash $env:SVI_CLIPBOARD_UNIT_EXE).Hash}
  $repo=Split-Path $desktop -Parent
  foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
  Write-NewJson $plan (Join-Path $OutputDir 'plan.json')
  try{
-  $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir) -Redirect
+  $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-Suite',$Suite) -Redirect
   $outTask=$workerProcess.StandardOutput.ReadToEndAsync();$errTask=$workerProcess.StandardError.ReadToEndAsync()
   Check ($workerProcess.WaitForExit(1200000)) 'Supplemental worker exceeded20min; no success inferred'
   Check ($outTask.Wait(2000) -and $errTask.Wait(2000)) 'Worker pipes did not finish'
@@ -79,11 +84,15 @@ function File-Rpc([string]$Folder,[hashtable]$Request){
 function Field([string]$Action,[hashtable]$Data=@{}){return File-Rpc $fixtureDir (@{action=$Action}+$Data)}
 function Host-Rpc([string]$Action,[hashtable]$Data=@{}){return File-Rpc $script:hostFolder (@{action=$Action}+$Data)}
 function Wait-File([string]$File){$end=[DateTime]::UtcNow.AddSeconds(30);while(-not(Test-Path $File)){Check ([DateTime]::UtcNow -lt $end) 'Owned fixture readiness failed';Start-Sleep -Milliseconds 50}}
-function Focus-Field(){
- $field=Field 'field' @{field='plain';initial='BEGIN React END';start=6;end=11}
- Check ((Native 'probeFocus' @{fixture_pid=$field.pid}).focused) 'Owned input did not focus';return $field
+function Focus-Field([string]$Name='plain'){
+ $field=Field 'field' @{field=$Name;initial='BEGIN React END';start=6;end=11}
+ Check ((Native 'probeFocus' @{fixture_pid=$field.pid}).focused) 'Owned input did not focus'
+ $baseline=Native 'capture' @{fixture_pid=$field.pid}
+ Check ($baseline.readback.text -ceq 'BEGIN React END' -and $baseline.readback.caret_utf16 -eq 6 -and $baseline.readback.selection_utf16_len -eq 5) 'BLOCKED: readable selected field precondition not acquired'
+ return $field
 }
 function Case([string]$Id,[scriptblock]$Body){
+ if(-not $script:results.Contains($Id)){return}
  $start=[DateTime]::UtcNow
  try{$detail=& $Body;$script:results[$Id]=@{id=$Id;status='pass';observations=$detail;started_at=$start.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}}
  catch{$script:results[$Id]=@{id=$Id;status=$(if($_.Exception.Message.StartsWith('BLOCKED:')){'blocked'}else{'fail'});error=$_.Exception.Message;started_at=$start.ToString('o');ended_at=[DateTime]::UtcNow.ToString('o')}}
@@ -112,10 +121,26 @@ function Dialog([string]$Action='inspect'){
  return Get-Content -Raw $file|ConvertFrom-Json
 }
 Add-Type @'
-using System;using System.Runtime.InteropServices;
+using System;using System.Runtime.InteropServices;using System.Text;
+public class RemainingEditFacts { public string text;public uint start;public uint end;public long hwnd; }
 public static class RemainingWin32 {
  [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessage(IntPtr hWnd,uint msg,IntPtr wParam,IntPtr lParam);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")] static extern IntPtr SendRaw(IntPtr hwnd,uint msg,UIntPtr wp,IntPtr lp,uint flags,uint timeout,out UIntPtr result);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")] static extern IntPtr SendText(IntPtr hwnd,uint msg,UIntPtr wp,StringBuilder lp,uint flags,uint timeout,out UIntPtr result);
+ public static RemainingEditFacts ReadClassic(IntPtr root,uint pid) {
+  IntPtr edit=FindWindowEx(root,IntPtr.Zero,"Edit",null);uint actualPid;GetWindowThreadProcessId(edit,out actualPid);
+  if(edit==IntPtr.Zero||actualPid!=pid)throw new Exception("Not the exact owned classic Edit");
+  UIntPtr size;if(SendRaw(edit,14,UIntPtr.Zero,IntPtr.Zero,34,1000,out size)==IntPtr.Zero)throw new Exception("Owned text length unavailable");
+  int length=checked((int)size.ToUInt64());if(length<0||length>200000)throw new Exception("Owned read exceeds fixed budget");
+  StringBuilder buffer=new StringBuilder(length+1);UIntPtr copied;
+  if(SendText(edit,13,new UIntPtr((uint)(length+1)),buffer,34,1000,out copied)==IntPtr.Zero||copied.ToUInt64()!=(ulong)length)throw new Exception("Owned full text unavailable");
+  UIntPtr selected;if(SendRaw(edit,176,UIntPtr.Zero,IntPtr.Zero,34,1000,out selected)==IntPtr.Zero)throw new Exception("Owned selection unavailable");
+  uint packed=(uint)selected.ToUInt64();if(packed==uint.MaxValue)throw new Exception("Selection is outside packed16-bit fixture range");
+  return new RemainingEditFacts{text=buffer.ToString(),start=packed&65535,end=packed>>16,hwnd=edit.ToInt64()};
+ }
 }
 '@
 function Close-Main([object]$KnownState=$null){
@@ -126,6 +151,25 @@ function Wait-Host([scriptblock]$Predicate,[int]$Budget=8000){$end=[DateTime]::U
 try{
  Wait-File (Join-Path $fixtureDir 'ready.json')
  $null=Native 'ping';$permission=Product 'permission';Check ($permission.supported -and $permission.trusted) 'Formal helper unavailable'
+ if($Suite -eq 'clipboard'){
+  foreach($kind in @('snapshot-publication-race','partial-write-restore','partial-and-restore-failure')){
+   Case "R14-$kind" {
+    $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
+    $test=switch($kind){'snapshot-publication-race'{'snapshot_to_publish_foreign_copy_is_zero_write'}'partial-write-restore'{'partial_write_failure_restores_original_without_paste'}default{'partial_write_and_restore_failure_is_visible_without_repeat'}}
+    $unit=Start-Owned $env:SVI_CLIPBOARD_UNIT_EXE @("clipboard::fault_checks::$test",'--exact','--ignored','--nocapture','--test-threads=1') -Redirect -ExtraEnvironment @{SVI_CLIPBOARD_FAULT_TESTS='1';SVI_CLIPBOARD_FAULT_TARGET_PID=[string]$field.pid}
+    $unitOut=$unit.StandardOutput.ReadToEndAsync();$unitErr=$unit.StandardError.ReadToEndAsync()
+    Check ($unit.WaitForExit(30000) -and $unitOut.Wait(1000) -and $unitErr.Wait(1000)) 'Clipboard control did not exit within30sec'
+    [IO.File]::WriteAllText((Join-Path $OutputDir "clipboard-$kind.stdout.txt"),$unitOut.Result,$utf8);[IO.File]::WriteAllText((Join-Path $OutputDir "clipboard-$kind.stderr.txt"),$unitErr.Result,$utf8)
+    Check ($unit.ExitCode -eq 0 -and $unitOut.Result.Contains('running 1 test') -and $unitOut.Result.Contains('1 passed; 0 failed')) 'Controlled production clipboard experiment failed'
+    $match=[regex]::Match($unitOut.Result,'CLIPBOARD_CONTROL_RESULT ([^\r\n]+)');Check $match.Success 'Actual control result missing';$control=$match.Groups[1].Value|ConvertFrom-Json
+    $actual=Field 'fieldState';$after=Native 'probeClipboardState';Check ($actual.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $actual.enterCount -eq 0) 'Clipboard error allowed a paste/Enter'
+    if($kind -eq 'snapshot-publication-race'){Check ($after.text -ceq 'SVI intervening clipboard' -and $before.sequence -ne $after.sequence) 'External version not preserved'}
+    elseif($kind -eq 'partial-write-restore'){Check ($after.text -ceq 'SVI original clipboard') 'Actual rollback did not restore original'}
+    else{Check ([string]::IsNullOrEmpty($after.text) -and $after.formats.Count -eq 0) 'Observed restore failure was hidden by an automatic second write'}
+    return @{control=$control;actual=$actual;before=$before;after=$after;unit_exit=$unit.ExitCode;scope='actual production dispatch/Win32 state; test-executable-only scheduling or I/O fault; not natural OS failure/S5'}
+   }
+  }
+ }else{
  Case 'R10-invalid-fields' {
   $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
   $bad=@(
@@ -169,15 +213,25 @@ try{
   }finally{$null=Field 'setOwnedPlainDisabled' @{disabled=$false}}
  }
  Case 'R10-max-utf16' {
-  # Use a fresh classic Edit window rather than forcing a DOM value or lowering verification.
+  $field=Focus-Field 'editor';$text='🙂'*16000;Check ($text.Length -eq 32000) 'Frozen UTF16 boundary differs';$null=Native 'probeSeedClipboard'
+  $result=Product 'insertCurrent' @{insertion_id='max-utf16';text=$text};$actual=Field 'fieldState'
+  Check ($result.status -eq 'inserted' -and $result.effect -eq 'written' -and $result.observable -and $actual.value -ceq "BEGIN $text END" -and $actual.start -eq 32006 -and $actual.end -eq 32006 -and $actual.chords.Count -eq 1 -and $actual.enterCount -eq 0) 'Legal32000 UTF16 did not strictly match independent DOM text/caret'
+  return @{result=$result;utf16_units=32000;actual_utf16_len=$actual.value.Length;caret=$actual.start;selection=($actual.end-$actual.start);paste_count=$actual.chords.Count;enter_count=$actual.enterCount}
+ }
+ Case 'R04-notepad-truncated-uia' {
+  # The first batch exposed a classic provider returning4096 UTF16 units. Keep
+  # that failure; independently read the actual Edit before classifying it.
   $file=Join-Path $OutputDir 'max-utf16.txt';[IO.File]::WriteAllText($file,'BEGIN React END',$utf8)
   $notepad=Start-Owned (Join-Path $env:WINDIR 'System32/notepad.exe') @($file)
   Check ((Native 'probeFocus' @{fixture_pid=$notepad.Id}).focused) 'Owned Notepad unavailable'
   $null=Native 'probeSelect' @{fixture_pid=$notepad.Id;start=6;length=5};$null=Native 'probeSeedClipboard'
   $text='🙂'*16000;Check ($text.Length -eq 32000) 'Frozen UTF16 boundary differs'
-  $result=Product 'insertCurrent' @{insertion_id='max-utf16';text=$text};$actual=Native 'capture' @{fixture_pid=$notepad.Id}
-  Check ($result.status -eq 'inserted' -and $result.observable -and $actual.readback.text -ceq "BEGIN $text END" -and $actual.readback.caret_utf16 -eq 32006 -and $actual.readback.selection_utf16_len -eq 0) 'Legal32000 UTF16 was not strictly inserted'
-  Stop-Owned $notepad;return @{result=$result;utf16_units=32000;actual_utf16_len=$actual.readback.text.Length;caret=$actual.readback.caret_utf16;selection=$actual.readback.selection_utf16_len}
+  $result=Product 'insertCurrent' @{insertion_id='max-notepad-limited-read';text=$text};$actual=Native 'capture' @{fixture_pid=$notepad.Id};$foreground=Native 'foreground'
+  Check ($foreground.root.pid -eq $notepad.Id) 'Owned classic window lost foreground'
+  $full=[RemainingWin32]::ReadClassic([IntPtr]::new([long]$foreground.root.hwnd),[uint32]$notepad.Id)
+  Check ($full.text -ceq "BEGIN $text END" -and $full.start -eq 32006 -and $full.end -eq 32006) 'Independent Win32 full text/caret differs'
+  Check ($actual.readback.text.Length -eq 4096 -and $null -eq $actual.readback.caret_utf16 -and $result.status -eq 'unverified' -and $result.effect -eq 'unknown' -and -not $result.observable) 'Limited UIA read was incorrectly treated as strict success'
+  Stop-Owned $notepad;return @{result=$result;utf16_units=32000;independent_text_utf16_len=$full.text.Length;caret=$full.start;selection=($full.end-$full.start);uia_read_utf16_len=$actual.readback.text.Length;scope='known hosted classic UIA truncation; full Win32 read is an independent oracle, not a product fallback'}
  }
  Case 'R09-capacity-10000' {
   $field=Focus-Field;$child=Start-Owned $formal @('--parent-pid',[string]$PID) -Redirect;$err=$child.StandardError.ReadToEndAsync()
@@ -266,6 +320,7 @@ try{
   return @{first=$first;actual_ack=$ack;filesystem_error_dialog=$errorDialog;error_ack=$errorAck;final=$state;fault='owned fresh tray-state.json.tmp is an actual directory; write fails, no mocked API'}
  }
  Close-Host
+ }
 }catch{Write-NewJson @{error=$_.Exception.Message} (Join-Path $OutputDir 'worker-failure.json')}
 finally{
  try{$null=Field 'quit'}catch{Write-Warning 'Target fixture quit did not acknowledge'}

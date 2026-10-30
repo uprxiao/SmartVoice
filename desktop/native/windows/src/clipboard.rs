@@ -340,6 +340,10 @@ pub fn snapshot() -> R<Snapshot> {
 }
 
 fn set_global(format: u32, data: &[u8]) -> R<()> {
+    #[cfg(test)]
+    if let Some(message) = fault_checks::before_set_global() {
+        return Err(message);
+    }
     unsafe {
         let g = GlobalAlloc(GMEM_MOVEABLE, data.len().max(1)).map_err(ctx("GlobalAlloc"))?;
         let p = GlobalLock(g);
@@ -399,6 +403,8 @@ pub fn still_owned(seq: u32) -> R<bool> {
 /// Compare the original version and write under the same lock. Even a partial failure carries
 /// only the version observed while we held the lock, never a later user's clipboard version.
 pub fn set_text_excluded(text: &str, expected_seq: u32) -> Result<Publication, WriteError> {
+    #[cfg(test)]
+    fault_checks::before_publish();
     open_with_retry().map_err(|message| WriteError {
         message,
         owned_seq: None,
@@ -506,6 +512,207 @@ pub fn clear() -> R<()> {
         let _ = CloseClipboard();
     }
     r
+}
+
+// These controls exist only in the ignored Windows test executable. The formal
+// helper has neither these environment flags nor a fault/probe protocol action.
+#[cfg(test)]
+mod fault_checks {
+    use super::*;
+    use std::os::windows::process::CommandExt;
+    use std::{
+        cell::RefCell,
+        io::Write,
+        process::{Command, Stdio},
+    };
+
+    #[derive(Default)]
+    struct Control {
+        race: bool,
+        count: usize,
+        fail_at: Vec<usize>,
+        partial_unicode_observed: bool,
+        external_pid: Option<u32>,
+    }
+    thread_local! { static CONTROL: RefCell<Control> = RefCell::new(Control::default()); }
+
+    fn unicode(bytes: &[u8]) -> String {
+        String::from_utf16(
+            &bytes
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .take_while(|u| *u != 0)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    fn guard() -> (u32, crate::modifier_watch::Watcher) {
+        assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+        assert_eq!(
+            std::env::var("SVI_CLIPBOARD_FAULT_TESTS").as_deref(),
+            Ok("1")
+        );
+        assert_eq!(crate::integrity::own_rid().unwrap(), 8192);
+        let target: u32 = std::env::var("SVI_CLIPBOARD_FAULT_TARGET_PID")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(crate::foreground::foreground().unwrap().pid, target);
+        // Refuse to mutate an arbitrary clipboard, even in an explicitly opted-in test.
+        let initial = snapshot().unwrap();
+        let text = initial
+            .entries
+            .iter()
+            .find(|e| e.format == CF_UNICODE)
+            .unwrap();
+        assert_eq!(unicode(&text.data), "SVI original clipboard");
+        (target, crate::modifier_watch::Watcher::start().unwrap())
+    }
+
+    pub(super) fn before_publish() {
+        let race = CONTROL.with(|c| {
+            let mut c = c.borrow_mut();
+            let race = c.race;
+            c.race = false;
+            race
+        });
+        if !race {
+            return;
+        }
+        // The scheduling seam is test-only; the copy and version change are
+        // genuinely performed by a different process through the real Win32 APIs.
+        let executable = std::path::PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap())
+            .join("release/svi-windows-probe.exe");
+        let mut child = Command::new(executable)
+            .creation_flags(0x08000000)
+            .env("SVI_WINDOWS_PROBE", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        assert_ne!(pid, std::process::id());
+        child.stdin.as_mut().unwrap().write_all(b"{\"id\":1,\"action\":\"ping\"}\n{\"id\":2,\"action\":\"probeSeedClipboard\",\"kind\":\"intervening\"}\n").unwrap();
+        drop(child.stdin.take());
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        let lines: Vec<serde_json::Value> = String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["pid"], pid);
+        assert!(lines[1].get("error").is_none());
+        CONTROL.with(|c| c.borrow_mut().external_pid = Some(pid));
+    }
+
+    pub(super) fn before_set_global() -> Option<String> {
+        CONTROL.with(|cell| {
+            let mut c = cell.borrow_mut();
+            if c.fail_at.is_empty() {
+                return None;
+            }
+            c.count += 1;
+            if c.count == 3 {
+                let bytes = unsafe { GetClipboardData(CF_UNICODE).ok() }
+                    .and_then(copy_global)
+                    .unwrap();
+                c.partial_unicode_observed = unicode(&bytes) == "SVI partial publication fixture";
+            }
+            if c.fail_at.contains(&c.count) {
+                Some("controlled SetClipboardData failure in ignored test executable".into())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn insert() -> serde_json::Value {
+        let uia = crate::uia::Uia::new().unwrap();
+        let pid = std::process::id();
+        let mut product =
+            crate::product::Product::new(uia, pid, crate::integrity::process_birth(pid).unwrap());
+        let request:crate::input_policy::Request=serde_json::from_value(serde_json::json!({"id":1,"action":"insertCurrent","insertion_id":"controlled-clipboard-failure","text":"SVI partial publication fixture"})).unwrap();
+        assert!(request.valid());
+        product.dispatch(&request)
+    }
+
+    #[test]
+    #[ignore = "requires opted-in disposable Medium Windows clipboard and explicit owned target"]
+    fn snapshot_to_publish_foreign_copy_is_zero_write() {
+        let (_target, _watcher) = guard();
+        let original = sequence();
+        CONTROL.with(|c| c.borrow_mut().race = true);
+        let result = insert();
+        assert_eq!(result["status"], "failed");
+        assert_eq!(result["effect"], "none");
+        assert_eq!(result["code"], "ZERO_WRITE");
+        let actual = snapshot().unwrap();
+        assert_ne!(actual.seq, original);
+        assert_eq!(
+            unicode(
+                &actual
+                    .entries
+                    .iter()
+                    .find(|e| e.format == CF_UNICODE)
+                    .unwrap()
+                    .data
+            ),
+            "SVI intervening clipboard"
+        );
+        CONTROL.with(|c| assert!(c.borrow().external_pid.is_some()));
+        println!(
+            "CLIPBOARD_CONTROL_RESULT {}",
+            serde_json::json!({"case":"snapshot-to-publish","result":result,"external_copy":true,"clipboard_is_external":true})
+        );
+    }
+
+    fn partial(restore_failure: bool) {
+        let (_target, _watcher) = guard();
+        let before = snapshot().unwrap();
+        CONTROL
+            .with(|c| c.borrow_mut().fail_at = if restore_failure { vec![3, 4] } else { vec![3] });
+        let result = insert();
+        CONTROL.with(|c| assert!(c.borrow().partial_unicode_observed));
+        assert_eq!(result["status"], "failed");
+        assert_eq!(result["effect"], "none");
+        assert_eq!(result["code"], "ZERO_WRITE");
+        let after = snapshot().unwrap();
+        if restore_failure {
+            assert!(result["warning"].as_str().unwrap().contains("恢复失败"));
+            assert!(after.entries.is_empty());
+        } else {
+            assert!(result.get("warning").is_none());
+            assert_eq!(before.entries.len(), after.entries.len());
+            for (a, b) in before.entries.iter().zip(after.entries.iter()) {
+                assert_eq!(a.format, b.format);
+                assert_eq!(a.data, b.data);
+            }
+        }
+        let count = CONTROL.with(|c| c.borrow().count);
+        if restore_failure {
+            assert_eq!(count, 4);
+        } // No second rollback or paste after the observed failure.
+        CONTROL.with(|c| *c.borrow_mut() = Control::default());
+        println!(
+            "CLIPBOARD_CONTROL_RESULT {}",
+            serde_json::json!({"case":if restore_failure{"partial-and-restore-failure"}else{"partial-restore"},"result":result,"actual_partial_unicode_observed":true,"set_calls":count,"restore_failure":restore_failure,"scope":"test-only injected I/O failure after two real writes; not a natural OS failure/S5 claim"})
+        );
+    }
+
+    #[test]
+    #[ignore = "requires opted-in disposable Medium Windows clipboard and explicit owned target"]
+    fn partial_write_failure_restores_original_without_paste() {
+        partial(false);
+    }
+    #[test]
+    #[ignore = "requires opted-in disposable Medium Windows clipboard and explicit owned target"]
+    fn partial_write_and_restore_failure_is_visible_without_repeat() {
+        partial(true);
+    }
 }
 
 /// Current formats with sizes and content hashes (for fidelity comparisons in reports).
