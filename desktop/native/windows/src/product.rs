@@ -166,7 +166,7 @@ impl Product {
         let lifetime = self
             .lifetimes
             .borrow_mut()
-            .capture(HWND(window.hwnd as *mut _), window.tid, window.pid)
+            .capture(HWND(window.hwnd as *mut _), window.tid)
             .map_err(|_| failed("TARGET_CHANGED", "当前窗口生命周期无法核验，本次没有输入"))?;
         let mut element = self.uia.focused().ok();
         // Warm up lazy Chromium once, but a genuinely empty input with a caret is already usable.

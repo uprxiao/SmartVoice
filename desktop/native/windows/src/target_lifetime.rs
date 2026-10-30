@@ -12,8 +12,7 @@ use windows::{
     Win32::{
         Foundation::{HANDLE, HWND},
         UI::WindowsAndMessaging::{
-            GetGUIThreadInfo, GetPropW, GetWindowThreadProcessId, RemovePropW, SetPropW,
-            GUITHREADINFO,
+            GetGUIThreadInfo, GetPropW, RemovePropW, SetPropW, GUITHREADINFO,
         },
     },
 };
@@ -66,17 +65,12 @@ pub struct Tracker {
     windows: BTreeMap<isize, Weak<Witness>>,
 }
 impl Tracker {
-    pub fn capture(&mut self, root: HWND, tid: u32, pid: u32) -> R<Captured> {
+    pub fn capture(&mut self, root: HWND, tid: u32) -> R<Captured> {
         let focus = focused(tid)?;
         let mut handles = vec![root];
         if !focus.is_invalid() && focus != root {
-            let mut owner = 0;
-            unsafe {
-                GetWindowThreadProcessId(focus, Some(&mut owner));
-            }
-            if owner != pid {
-                return Err("target focus process changed".into());
-            }
+            // Composite apps can host input in another process. SetProp's UIPI
+            // check still rejects higher integrity; no same-PID allowlist.
             handles.push(focus);
         }
         self.windows.retain(|_, value| value.strong_count() > 0);
