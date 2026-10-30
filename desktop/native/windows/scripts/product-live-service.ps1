@@ -19,18 +19,28 @@ $ui=Join-Path $PSScriptRoot 'product-live-ui.cjs'
 $electron=Join-Path $repo 'desktop/node_modules/electron/dist/electron.exe'
 $profileDir=Join-Path $EvidenceDir 'desktop-profile'
 $environment=Join-Path $EvidenceDir 'environment.json'
-$server=$null;$desktop=$null;$second=$null;$browser=$null;$historyNotepad=$null;$serverOut=$null;$serverErr=$null
+$server=$null;$desktop=$null;$second=$null;$browser=$null;$historyNotepad=$null;$journalDriver=$null;$serverOut=$null;$serverErr=$null
 $data=[ordered]@{source_sha=$env:GITHUB_SHA;status='not_run';scope='real Windows Main/preload + real isolated HTTP/PostgreSQL/Admin; mock providers, no hardware/audio/model/S5 pass';desktop_stops=@();profile_lifecycle=@()}
 if(-not ('SviLiveWindows' -as [type])){Add-Type @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
+public class SviNoteFacts { public string text;public uint start;public uint end; }
 public static class SviLiveWindows {
   public delegate bool Callback(IntPtr hwnd,IntPtr data);
   [DllImport("user32.dll")] static extern bool EnumWindows(Callback cb,IntPtr data);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")] static extern IntPtr SendRaw(IntPtr window,uint message,UIntPtr wp,IntPtr lp,uint flags,uint budget,out UIntPtr result);
+  public static SviNoteFacts ReadNote(IntPtr root,uint expectedPid){
+    IntPtr edit=FindWindowEx(root,IntPtr.Zero,"Edit",null);uint pid;GetWindowThreadProcessId(edit,out pid);if(edit==IntPtr.Zero||pid!=expectedPid)throw new Exception("Owned classic Edit not available");
+    UIntPtr size;if(SendRaw(edit,14,UIntPtr.Zero,IntPtr.Zero,2,150,out size)==IntPtr.Zero||size.ToUInt64()>4096)throw new Exception("Owned text length unavailable");
+    int count=(int)size.ToUInt64()+1;IntPtr buffer=Marshal.AllocHGlobal(count*2);
+    try{UIntPtr result;if(SendRaw(edit,13,new UIntPtr((uint)count),buffer,2,150,out result)==IntPtr.Zero)throw new Exception("Owned text unavailable");string text=Marshal.PtrToStringUni(buffer,(int)result.ToUInt64());if(SendRaw(edit,0xB0,UIntPtr.Zero,IntPtr.Zero,2,150,out result)==IntPtr.Zero)throw new Exception("Owned selection unavailable");uint packed=(uint)result.ToUInt64();return new SviNoteFacts{text=text,start=packed&65535,end=packed>>16};}finally{Marshal.FreeHGlobal(buffer);}
+  }
   public static int Visible(uint pid){int count=0;EnumWindows((hwnd,data)=>{uint owner;GetWindowThreadProcessId(hwnd,out owner);if(owner==pid&&IsWindowVisible(hwnd))count++;return true;},IntPtr.Zero);return count;}
 }
 '@
@@ -136,7 +146,7 @@ try {
     foreach($file in @('server/tests/desktop_live_environment.py','server/tests/desktop_history_fixture.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/native/windows/credential-bootstrap.ts','desktop/src/main/core/auth-service.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','desktop/src/renderer/views/HistoryView.tsx','desktop/src/renderer/stores/session-store.ts','server/app/models/session.py','server/app/services/session_runtime.py','server/app/providers/asr/mock.py','server/app/providers/llm/mock.py','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs','desktop/native/windows/fixtures/shortcut-owner.cjs')){
         $sources[$file]=(Get-FileHash (Join-Path $repo $file) -Algorithm SHA256).Hash
     }
-    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$($(if($HistoryInsert){15}else{10})+$(if($ExpandedUI){4}else{0}));expanded_ui=[bool]$ExpandedUI;case_groups=@{register=5;resume=2;admin=3;history=$(if($HistoryInsert){5}else{0})};oracle='baseline: one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';history_oracle=$(if($HistoryInsert){'after complete baseline: real HTTP/WS zero PCM/mock result with explicitly prepared review flag; actual UI refine retry, manual OS target capture/insert, duplicate click, logout; 1 session/2 results/1 inserted observable receipt/14 chars/0 learning; real Admin same database'}else{'not planned'});audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
+    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$($(if($HistoryInsert){15}else{10})+$(if($ExpandedUI){8}else{0}));expanded_ui=[bool]$ExpandedUI;case_groups=@{register=5;resume=2;admin=3;history=$(if($HistoryInsert){5}else{0});controls=$(if($ExpandedUI){4}else{0});journal=$(if($ExpandedUI){4}else{0})};oracle='baseline: one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';history_oracle=$(if($HistoryInsert){'after complete baseline: real HTTP/WS zero PCM/mock result with explicitly prepared review flag; actual UI refine retry, manual OS target capture/insert, duplicate click, logout; 1 session/2 results/1 inserted observable receipt/14 chars/0 learning; real Admin same database'}else{'not planned'});audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
     Assert-Live (Test-Path $env:PGBIN) 'Preinstalled frozen PostgreSQL tools unavailable'
     & $PythonExe $fixture prepare --run-dir $EvidenceDir --pg-bin $env:PGBIN --port 17863
     Assert-Live ($LASTEXITCODE -eq 0) 'Isolated fixture setup failed; private setup evidence retained'
@@ -293,11 +303,65 @@ try {
         $historyFinal=Snapshot 'database-after-history-logout.json'
         Assert-Live ($historyFinal.users.Count -eq 2 -and $historyFinal.sessions -eq 1 -and $historyFinal.active_logins -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'History client/Admin logout left credentials or unexpected sessions'
         $data.history_insertion=@{status='pass';synthetic_audio=$true;real_dom_input=$true;formal_product_native_helper=$true;physical_microphone_verified=$false;independent_database=$history}
+        if($ExpandedUI){
+            $crashRecord=@{planned=1;cases=@(@{id='LIVE-JOURNAL-01';status='not_run'});scope='actual Main/helper hard exit after observed target consumption, before terminal receipt; real PG/HTTP and persisted journal; fake PCM/providers'}
+            try{
+                if(-not $historyNotepad.HasExited){$historyNotepad.Kill($true)};Assert-Live ($historyNotepad.WaitForExit(3000)) 'Previous owned Notepad cleanup failed'
+                $journalSeedText=& $PythonExe $historyFixture seed --environment $environment --slot journal
+                Assert-Live ($LASTEXITCODE -eq 0) 'Independent crash history setup failed'
+                $journalSeed=$journalSeedText|ConvertFrom-Json
+                $journalFile=Join-Path $EvidenceDir 'journal-notepad.txt';[IO.File]::WriteAllText($journalFile,'BEGIN React END',[Text.UTF8Encoding]::new($false))
+                $noteInfo=[Diagnostics.ProcessStartInfo]::new($notepadExe);$noteInfo.UseShellExecute=$false;$noteInfo.ArgumentList.Add($journalFile);$historyNotepad=[Diagnostics.Process]::Start($noteInfo)
+                $end=[DateTime]::UtcNow.AddSeconds(20)
+                do{$historyNotepad.Refresh();if($historyNotepad.MainWindowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 50}while([DateTime]::UtcNow -lt $end)
+                $noteFacts=Get-CimInstance Win32_Process -Filter "ProcessId = $($historyNotepad.Id)"
+                Assert-Live ($historyNotepad.MainWindowHandle -ne [IntPtr]::Zero -and [IO.Path]::GetFullPath($noteFacts.ExecutablePath) -eq [IO.Path]::GetFullPath($notepadExe)) 'Fresh journal Notepad identity unavailable'
+                $launch=Start-Desktop;$desktop=$launch.process
+                Write-NewJson @{schema='svi-history-targets-v1';main_pid=$desktop.Id;notepad_pid=$historyNotepad.Id;notepad_image_verified=$true;controller_owns_process_objects=$true} (Join-Path $EvidenceDir 'journal-targets.json')
+                $driverInfo=[Diagnostics.ProcessStartInfo]::new((Get-Command node).Source);$driverInfo.UseShellExecute=$false;$driverInfo.RedirectStandardOutput=$true;$driverInfo.RedirectStandardError=$true
+                foreach($arg in @($ui,[string]$launch.port,$environment,(Join-Path $EvidenceDir 'journal-arm.json'),'journal-arm')){$driverInfo.ArgumentList.Add($arg)}
+                $journalDriver=[Diagnostics.Process]::Start($driverInfo);$journalOut=$journalDriver.StandardOutput.ReadToEndAsync();$journalErr=$journalDriver.StandardError.ReadToEndAsync()
+                $readyFile=Join-Path $EvidenceDir 'journal-retarget-ready.json';$end=[DateTime]::UtcNow.AddSeconds(60)
+                while(-not(Test-Path $readyFile)){Assert-Live (-not $journalDriver.HasExited -and [DateTime]::UtcNow -lt $end) 'Actual journal UI retarget did not arm';Start-Sleep -Milliseconds 30}
+                $ready=Get-Content -Raw $readyFile|ConvertFrom-Json;Assert-Live ($ready.ready -and $ready.main_pid -eq $desktop.Id -and $ready.notepad_pid -eq $historyNotepad.Id) 'Crash readiness ownership mismatch'
+                $journalHelpers=@(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($desktop.Id) AND Name = 'smartvoiceinput-input.exe'"|ForEach-Object{Get-Process -Id $_.ProcessId -ErrorAction Stop})
+                Assert-Live ($journalHelpers.Count -ge 1) 'Captured target did not own a real helper'
+                Write-NewJson @{schema='svi-journal-click-go-v1';main_pid=$desktop.Id} (Join-Path $EvidenceDir 'journal-click-go.json')
+                $watch=[Diagnostics.Stopwatch]::StartNew();$observed=$null
+                do{$observed=[SviLiveWindows]::ReadNote($historyNotepad.MainWindowHandle,[uint32]$historyNotepad.Id);if($observed.text -ceq $journalSeed.expected_native_text -and $observed.start -eq $journalSeed.expected_caret_utf16 -and $observed.end -eq $observed.start){break};Start-Sleep -Milliseconds 5}while($watch.ElapsedMilliseconds -lt 8000)
+                Assert-Live ($observed.text -ceq $journalSeed.expected_native_text -and $observed.start -eq 22 -and $observed.end -eq 22) 'Actual journal insertion was not observed'
+                $desktop.Kill($true);Assert-Live ($desktop.WaitForExit(5000)) 'Actual Main hard-exit not confirmed'
+                foreach($child in $journalHelpers){Assert-Live ($child.WaitForExit(3000)) 'Old helper remained after controlled Main hard-exit'}
+                $data.desktop_stops+=@(@{main_exit_confirmed=$true;controlled_journal_hard_exit=$true;helpers=@($journalHelpers|ForEach-Object{@{exit_confirmed=$_.HasExited}})});$desktop=$null
+                $marks=@(Get-ChildItem (Join-Path $profileDir 'insertion-marks') -Recurse -Filter '*.json' -File|ForEach-Object{Get-Content -Raw $_.FullName|ConvertFrom-Json}|Where-Object{$_.session_id -eq $journalSeed.session_id})
+                $beforeRestoreText=& $PythonExe $historyFixture snapshot --environment $environment --slot journal;Assert-Live ($LASTEXITCODE -eq 0) 'Independent pre-restore SQL failed';$beforeRestore=$beforeRestoreText|ConvertFrom-Json
+                Write-NewJson $beforeRestore (Join-Path $EvidenceDir 'database-journal-before-restore.json')
+                Assert-Live ($marks.Count -eq 1 -and $marks[0].phase -eq 'started' -and $beforeRestore.insertions.Count -eq 1 -and $beforeRestore.insertions[0].status -eq 'reserved') 'BLOCKED: hard-exit did not acquire started/reserved before receipt; no restart pass inferred'
+                Assert-Live ($journalDriver.WaitForExit(5000)) 'Owned arm controller did not stop';Assert-Live ($journalOut.Wait(1000) -and $journalErr.Wait(1000)) 'Arm output not drained'
+                [IO.File]::WriteAllText((Join-Path $EvidenceDir 'journal-arm.stderr.private.log'),$journalErr.Result)
+                $arm=Get-Content -Raw (Join-Path $EvidenceDir 'journal-arm.json')|ConvertFrom-Json;Assert-Live $arm.preparation.armed 'Actual insertion click was not confirmed by its controller'
+                $foregroundBefore=[SviLiveWindows]::GetForegroundWindow().ToInt64();$launch=Start-Desktop -Background;$desktop=$launch.process
+                $end=[DateTime]::UtcNow.AddSeconds(15)
+                do{$restoredText=& $PythonExe $historyFixture snapshot --environment $environment --slot journal;Assert-Live ($LASTEXITCODE -eq 0) 'Post-restart SQL failed';$restored=$restoredText|ConvertFrom-Json;if($restored.insertions.Count -eq 1 -and $restored.insertions[0].status -eq 'unverified'){break};Start-Sleep -Milliseconds 100}while([DateTime]::UtcNow -lt $end)
+                $afterRestore=[SviLiveWindows]::ReadNote($historyNotepad.MainWindowHandle,[uint32]$historyNotepad.Id)
+                Assert-Live ($restored.insertions.Count -eq 1 -and $restored.insertions[0].status -eq 'unverified' -and -not $restored.insertions[0].observable -and $restored.insertions[0].error_code -eq 'CLIENT_INTERRUPTED' -and $restored.learning_events -eq 0 -and $afterRestore.text -ceq $journalSeed.expected_native_text -and $afterRestore.start -eq 22 -and $afterRestore.end -eq 22) 'Hard-exit recovery replayed or fabricated a successful receipt'
+                Assert-Live ([SviLiveWindows]::Visible($desktop.Id) -eq 0 -and [SviLiveWindows]::GetForegroundWindow().ToInt64() -eq $foregroundBefore) 'Crash background restoration activated Main'
+                Write-NewJson $restored (Join-Path $EvidenceDir 'database-journal-after-restore.json')
+                $crashRecord.cases[0]=@{id='LIVE-JOURNAL-01';status='pass';before_marker=$marks[0];before_database=$beforeRestore;after_database=$restored;actual_before_exit=$observed;actual_after_restart=$afterRestore;helpers_exit_confirmed=$true;physical_microphone_verified=$false}
+                $second=Start-Desktop;Assert-Live ($second.process.WaitForExit(10000) -and $second.process.ExitCode -eq 0) 'Crash-recovery second instance did not hand off'
+                & node $ui $launch.port $environment (Join-Path $EvidenceDir 'journal-restore.json') 'journal-restore';Assert-Live ($LASTEXITCODE -eq 0) 'Recovered result UI/logout failed'
+                Stop-Desktop $desktop;$desktop=$null
+                & node $ui $port $environment (Join-Path $EvidenceDir 'admin-journal.json') 'admin-journal';Assert-Live ($LASTEXITCODE -eq 0) 'Actual Admin uncertainty totals failed'
+                $journalFinal=Snapshot 'database-after-journal-logout.json';Assert-Live ($journalFinal.sessions -eq 2 -and $journalFinal.active_logins -eq 0 -and @(Get-ChildItem $profileDir -Filter 'auth-*.bin' -File).Count -eq 0) 'Crash recovery logout left activity or extra sessions'
+            }catch{if($crashRecord.cases[0].status -ne 'pass'){$crashRecord.cases[0]=@{id='LIVE-JOURNAL-01';status=$(if($_.Exception.Message.StartsWith('BLOCKED:')){'blocked'}else{'fail'});error=$_.Exception.Message}};throw}
+            finally{Write-NewJson $crashRecord (Join-Path $EvidenceDir 'journal-crash-record.json')}
+        }
     }
     if($null -ne $resumeFailure){throw "$resumeFailure; independent Admin and available history UI completed, saved-account gate remains failed"}
     $data.status='pass'
 } catch {$data.status='fail';$data.error=$_.Exception.Message;throw}
 finally {
+    if($null -ne $journalDriver -and -not $journalDriver.HasExited){$journalDriver.Kill($true);$data.journal_driver_exit_confirmed=$journalDriver.WaitForExit(3000);if(-not $data.journal_driver_exit_confirmed){$data.status='fail'}}
     if($null -ne $second -and -not $second.process.HasExited){try{Stop-Desktop $second.process}catch{$data.second_cleanup_error=$_.Exception.Message;$data.status='fail'}}
     if($null -ne $desktop){try{Stop-Desktop $desktop}catch{$data.desktop_cleanup_error=$_.Exception.Message;$data.status='fail'}}
     if($null -ne $historyNotepad){if(-not $historyNotepad.HasExited){$historyNotepad.Kill($true)};$data.notepad_exit_confirmed=$historyNotepad.WaitForExit(5000);if(-not $data.notepad_exit_confirmed){$data.status='fail'}}
@@ -313,7 +377,7 @@ finally {
     }
     if(Test-Path $environment){& $PythonExe $fixture stop-pg --environment $environment;$data.postgres_cleanup_confirmed=($LASTEXITCODE -eq 0);if(-not $data.postgres_cleanup_confirmed){$data.status='fail'}}
     if($ExpandedUI -and (Test-Path $EvidenceDir)){
-        foreach($entry in @(@{file='desktop-controls.json';ids=@('LIVE-CONTROL-01','LIVE-CONTROL-02')},@{file='desktop-crash-recovery.json';ids=@('LIVE-CONTROL-03')},@{file='desktop-controls-restart.json';ids=@('LIVE-CONTROL-04')})){
+        foreach($entry in @(@{file='desktop-controls.json';ids=@('LIVE-CONTROL-01','LIVE-CONTROL-02')},@{file='desktop-crash-recovery.json';ids=@('LIVE-CONTROL-03')},@{file='desktop-controls-restart.json';ids=@('LIVE-CONTROL-04')},@{file='journal-restore.json';ids=@('LIVE-JOURNAL-02','LIVE-JOURNAL-03')},@{file='admin-journal.json';ids=@('LIVE-JOURNAL-ADMIN')},@{file='journal-crash-record.json';ids=@('LIVE-JOURNAL-01')})){
             $file=Join-Path $EvidenceDir $entry.file
             if(-not(Test-Path $file)){Write-NewJson @{planned=$entry.ids.Count;cases=@($entry.ids|ForEach-Object{@{id=$_;status='blocked';reason='Earlier owned Main/UI preparation failed; no pass inferred'}})} $file}
         }

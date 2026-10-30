@@ -20,7 +20,7 @@ REFINED = "帮我加一个按钮，不要修改数据库。"
 EMAIL = "desktop-live@example.test"
 
 
-async def snapshot(path):
+async def snapshot(path, session_id=None):
     import asyncpg
     value = environment(path)
     conn = await asyncpg.connect(value["database_url"].replace("postgresql+asyncpg:", "postgresql:"))
@@ -32,10 +32,11 @@ async def snapshot(path):
             JOIN results r ON r.session_id=s.id AND r.user_id=s.user_id
             JOIN session_attempts a ON a.user_id=r.user_id AND a.session_id=r.session_id
             AND a.attempt_no=r.attempt_no
-            ORDER BY r.attempt_no""")
+            WHERE ($1::uuid IS NULL OR s.id=$1) ORDER BY r.attempt_no""", session_id)
         receipts = await conn.fetch("""SELECT i.id,i.session_id,i.result_id,i.status,
             i.observable,i.error_code FROM insertions i JOIN sessions s
-            ON s.id=i.session_id AND s.user_id=i.user_id ORDER BY i.id""")
+            ON s.id=i.session_id AND s.user_id=i.user_id
+            WHERE ($1::uuid IS NULL OR s.id=$1) ORDER BY i.id""", session_id)
         learning = await conn.fetchval("SELECT count(*) FROM learning_events")
         users = await conn.fetch("SELECT email,learning_enabled FROM users ORDER BY email")
         return {"results": [dict(row) for row in rows], "insertions": [dict(row) for row in receipts],
@@ -44,14 +45,18 @@ async def snapshot(path):
         await conn.close()
 
 
-async def seed(path):
+async def seed(path, slot="history"):
     import asyncpg
     import httpx
     import websockets
     value = environment(path)
-    output = Path(value["run_dir"]) / "history-seed.json"
-    if output.exists() or (await snapshot(path))["results"]:
+    output = Path(value["run_dir"]) / f"{slot}-seed.json"
+    before = await snapshot(path)
+    if output.exists() or (slot == "history" and before["results"]):
         raise RuntimeError("Fresh empty owned history required")
+    if slot == "journal" and (len(before["results"]) != 2 or len(before["insertions"]) != 1
+            or before["insertions"][0]["status"] != "inserted" or before["learning_events"] != 0):
+        raise RuntimeError("Completed owned baseline required before the independent crash scenario")
     private = json.loads(Path(value["private_file"]).read_text(encoding="utf-8"))
     async with httpx.AsyncClient(base_url=value["origin"], timeout=15, trust_env=False) as client:
         login = await client.post("/api/auth/login", json={"email": EMAIL, "password": private["password"],
@@ -102,7 +107,7 @@ async def seed(path):
             logout = await client.post("/api/auth/logout", headers=headers)
             if logout.status_code != 204:
                 raise RuntimeError(f"Preparation login revocation failed ({logout.status_code})")
-    facts = await snapshot(path)
+    facts = await snapshot(path, sid)
     if len(facts["results"]) != 1 or facts["insertions"] or facts["learning_events"] != 0:
         raise RuntimeError("Synthetic history baseline differs")
     row = facts["results"][0]
@@ -122,6 +127,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("seed", "snapshot"))
     parser.add_argument("--environment", required=True, type=Path)
+    parser.add_argument("--slot", choices=("history", "journal"), default="history")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(seed(args.environment) if args.command == "seed" else snapshot(args.environment)),
+    scope_id = None
+    if args.command == "snapshot" and args.slot == "journal":
+        scope_id = json.loads((Path(environment(args.environment)["run_dir"]) / "journal-seed.json").read_text())["session_id"]
+    print(json.dumps(asyncio.run(seed(args.environment, args.slot) if args.command == "seed" else snapshot(args.environment, scope_id)),
                      ensure_ascii=True, default=str))  # Portable JSON pipe; decoded fixture text stays exact.
