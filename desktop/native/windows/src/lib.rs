@@ -29,6 +29,8 @@ pub mod probe_protocol;
 pub mod product;
 pub mod report;
 #[cfg(windows)]
+pub mod target_lifetime;
+#[cfg(windows)]
 pub mod uia;
 pub mod verification;
 

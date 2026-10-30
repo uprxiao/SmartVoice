@@ -18,7 +18,7 @@ $planned=switch($Suite){
  'clipboard'{@('R14-snapshot-publication-race','R14-partial-write-restore','R14-partial-and-restore-failure')}
  'ui'{@('R22-first-close-persist','R22-restart-close','R22-write-failure','R23-renderer-crash-reopen')}
  'boundaries'{@('R03-exact-hwnd-reuse','R06-process-query-denied','R06-no-foreground','R06-inaccessible-input-desktop','R04-natural-cold-chrome')}
- 'sessions'{foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){"R08-$stage-$boundary"}}}
+ 'sessions'{foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){"R08-$stage-$boundary"}};'R09-journal-real-io-failure';'R08-modifier-wait-cancel'}
  default{@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R04-notepad-truncated-uia','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')}
 }
 foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
@@ -48,7 +48,7 @@ if(-not $Worker){
  if($Suite -eq 'clipboard'){$plan.test_executable_sha256=(Get-FileHash $env:SVI_CLIPBOARD_UNIT_EXE).Hash}
  if($Suite -eq 'boundaries'){$plan.handle_fixture_sha256=(Get-FileHash $env:SVI_HANDLE_REUSE_EXE).Hash}
  $repo=Split-Path $desktop -Parent
- foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','desktop/native/windows/fixtures/remaining-sessions.cjs','desktop/src/main/index.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/native/windows/fixtures/handle-reuse.cs','desktop/native/windows/fixtures/dialog-native.cs','desktop/native/windows/fixtures/remaining-win32-boundaries.cs','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
+ foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','desktop/native/windows/fixtures/remaining-sessions.cjs','desktop/src/main/index.ts','desktop/src/main/rpc.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/native/windows/src/product.rs','desktop/native/windows/src/target_lifetime.rs','desktop/native/windows/fixtures/handle-reuse.cs','desktop/native/windows/fixtures/dialog-native.cs','desktop/native/windows/fixtures/remaining-win32-boundaries.cs','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
  Write-NewJson $plan (Join-Path $OutputDir 'plan.json')
  try{
   $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-Suite',$Suite) -Redirect
@@ -209,11 +209,36 @@ try{
     Check ($settled.pending.status -ne 'pending') 'Old production session did not settle'
     $after=Field 'fieldState';$clip=Native 'probeClipboardState';$expectedCount=if($stage -in @('helper','late')){1}else{0};$expectedText=if($expectedCount -eq 1){'BEGIN 中文🙂 END'}else{'BEGIN React END'}
     $new=Host-Rpc 'sessionNewOperation';$final=Field 'fieldState';$done=Host-Rpc 'sessionDispose'
-    $script:fileSequence++;Write-NewJson @{prepared=$prepared;boundary=$boundaryState;settled=$settled;actual=$after;new_operation=$new;final=$final;cleanup=$done} (Join-Path $OutputDir "session-$stage-$boundary-$($script:fileSequence).json")
-    Check ($settled.writes.Count -eq $expectedCount -and $after.value -ceq $expectedText -and $after.chords.Count -eq $expectedCount -and $after.enterCount -eq 0 -and $final.value -ceq $expectedText -and $final.chords.Count -eq $expectedCount -and $clip.text -ceq 'SVI original clipboard' -and $done.exit_confirmed) 'Old session dispatched/replayed after its software boundary or leaked into the next operation'
+    $script:fileSequence++;Write-NewJson @{prepared=$prepared;boundary=$boundaryState;settled=$settled;actual=$after;clipboard_before=$before;clipboard_after=$clip;new_operation=$new;final=$final;cleanup=$done} (Join-Path $OutputDir "session-$stage-$boundary-$($script:fileSequence).json")
+    Check ($settled.writes.Count -eq $expectedCount -and $after.value -ceq $expectedText -and $after.chords.Count -eq $expectedCount -and $after.enterCount -eq 0 -and $final.value -ceq $expectedText -and $final.chords.Count -eq $expectedCount -and ($expectedCount -gt 0 -or $clip.sequence -eq $before.sequence) -and $done.exit_confirmed) 'Old session dispatched/replayed after its software boundary or leaked into the next operation'
     return @{boundary=$boundaryState;settled=$settled;actual=$after;new_operation=$new;cleanup=$done;scope='actual SessionService/journal/bridge/helper and loopback WS; metadata/zeroPCM fixture; exact Main interrupt callback injected as software event, not physical sleep/full Main/S5'}
    }
   }}
+  Case 'R08-modifier-wait-cancel' {
+   $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
+   $prepared=Host-Rpc 'sessionPrepare' @{stage='modifier';boundary='cancel'}
+   try{
+    $held=Native 'probeHoldModifiers' @{fixture_pid=$field.pid};$null=Host-Rpc 'sessionBegin';$end=[DateTime]::UtcNow.AddSeconds(5)
+    do{$state=Host-Rpc 'sessionState';if($state.signal -eq 'dispatched'){break};Start-Sleep -Milliseconds 10}while([DateTime]::UtcNow -lt $end)
+    Check ($state.signal -eq 'dispatched' -and $state.pending.status -eq 'pending') 'BLOCKED: actual modifier-wait dispatch not acquired'
+    $boundaryState=Host-Rpc 'sessionBoundary';Check ($boundaryState.dispatch_to_boundary_ms -lt 400) 'BLOCKED: cancellation not acquired before frozen500ms modifier wait'
+    $end=[DateTime]::UtcNow.AddSeconds(6)
+    do{$settled=Host-Rpc 'sessionState';if($settled.pending.status -ne 'pending'){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+    $actual=Field 'fieldState';$after=Native 'probeClipboardState';$done=Host-Rpc 'sessionDispose'
+    $script:fileSequence++;Write-NewJson @{held=$held;boundary=$boundaryState;settled=$settled;actual=$actual;clipboard_before=$before;clipboard_after=$after;cleanup=$done} (Join-Path $OutputDir "modifier-wait-cancel-$($script:fileSequence).json")
+    Check ($settled.pending.status -ne 'pending' -and $actual.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $actual.enterCount -eq 0 -and $before.sequence -eq $after.sequence -and $done.exit_confirmed) 'Actual cancellation during modifier wait allowed a late paste'
+    return @{boundary=$boundaryState;settled=$settled;actual=$actual;cleanup=$done;physical_keyboard_verified=$false;scope='exact production RPC handler and actual helper waiting on injected held keys; not physical keyboard or full Main UI'}
+   }finally{$null=Native 'probeReleaseModifiers'}
+  }
+  Case 'R09-journal-real-io-failure' {
+   $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
+   $prepared=Host-Rpc 'sessionPrepare' @{stage='journal-io';boundary='cancel'};$null=Host-Rpc 'sessionBegin'
+   $end=[DateTime]::UtcNow.AddSeconds(6)
+   do{$settled=Host-Rpc 'sessionState';if($settled.pending.status -ne 'pending'){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+   $actual=Field 'fieldState';$after=Native 'probeClipboardState';$done=Host-Rpc 'sessionDispose'
+   Check ($settled.signal -eq 'journal-io' -and $settled.pending.status -eq 'resolved' -and $settled.pending.value.status -eq 'unverified' -and $settled.writes.Count -eq 0 -and $settled.claims.Count -eq 1 -and $actual.value -ceq 'BEGIN React END' -and $actual.chords.Count -eq 0 -and $before.sequence -eq $after.sequence -and $done.exit_confirmed) 'Actual filesystem journal failure allowed a native side effect'
+   return @{prepared=$prepared;settled=$settled;actual=$actual;clipboard_unchanged=$true;cleanup=$done;fault='actual file occupies only this owned fictional journal user directory; no mocked filesystem success/failure'}
+  }
   Close-Host
  }elseif($Suite -eq 'boundaries'){
   Add-Type -Path (Join-Path $desktop 'native/windows/fixtures/remaining-win32-boundaries.cs')

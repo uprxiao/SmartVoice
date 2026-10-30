@@ -2,12 +2,13 @@
 use crate::{
     clipboard, foreground,
     input_policy::{Effect, Executions, Request},
-    keys, modifier_watch,
+    keys, modifier_watch, target_lifetime,
     uia::{classify, TargetClass, Uia},
     verification::{self, Readback},
 };
 use serde_json::{json, Value};
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     time::{Duration, Instant},
 };
@@ -20,12 +21,14 @@ use windows::Win32::{
 };
 
 struct Target {
+    lifetime: target_lifetime::Captured,
     window: foreground::ForegroundInfo,
     root: Option<foreground::ForegroundInfo>,
     element: Option<IUIAutomationElement>,
     before: Option<Readback>,
 }
 pub struct Product {
+    lifetimes: RefCell<target_lifetime::Tracker>,
     pub uia: Uia,
     parent: u32,
     parent_birth: u64,
@@ -128,6 +131,7 @@ impl Drop for Clip<'_> {
 impl Product {
     pub fn new(uia: Uia, parent: u32, parent_birth: u64) -> Self {
         Self {
+            lifetimes: RefCell::new(target_lifetime::Tracker::default()),
             uia,
             parent,
             parent_birth,
@@ -159,6 +163,11 @@ impl Product {
         if window.pid == self.parent {
             return Err(failed("TARGET_UNSUPPORTED", "请先切换到需要输入的应用"));
         }
+        let lifetime = self
+            .lifetimes
+            .borrow_mut()
+            .capture(HWND(window.hwnd as *mut _), window.tid, window.pid)
+            .map_err(|_| failed("TARGET_CHANGED", "当前窗口生命周期无法核验，本次没有输入"))?;
         let mut element = self.uia.focused().ok();
         // Warm up lazy Chromium once, but a genuinely empty input with a caret is already usable.
         if warmup {
@@ -187,7 +196,9 @@ impl Product {
             }
         }
         let before = element.as_ref().and_then(|el| readable(&self.uia, el));
-        if !self.parent_alive()
+        if !lifetime.alive()
+            || !lifetime.focus_unchanged()
+            || !self.parent_alive()
             || !foreground::foreground().is_some_and(|f| same_window(&window, &f))
         {
             return Err(failed("TARGET_CHANGED", "写入前目标已变化，本次没有输入"));
@@ -196,6 +207,7 @@ impl Product {
             root.pid == window.pid && root.process_birth_100ns == window.process_birth_100ns
         });
         Ok(Target {
+            lifetime,
             window,
             root,
             element,
@@ -218,6 +230,9 @@ impl Product {
         let Some(target) = Self::key(id).and_then(|k| self.targets.get(&k)) else {
             return Err("target_not_cached");
         };
+        if !target.lifetime.alive() {
+            return Err("target_lifecycle_changed");
+        }
         if target.before.is_none() || target.element.is_none() {
             return Err("target_unreadable");
         }
@@ -457,7 +472,9 @@ impl Product {
                 return failed("ZERO_WRITE", "写入前剪贴板或按键已变化，本次没有输入");
             }
             let fresh = foreground::admit_foreground();
-            if !self.parent_alive()
+            if !target.lifetime.alive()
+                || !target.lifetime.focus_unchanged()
+                || !self.parent_alive()
                 || !fresh.allowed
                 || !fresh.info.is_some_and(|f| same_window(&target.window, &f))
                 || target.element.as_ref().is_some_and(|el| {
@@ -483,8 +500,8 @@ impl Product {
                 if Instant::now() > end {
                     break false;
                 }
-                let matched = foreground::foreground()
-                    .is_some_and(|f| same_window(&target.window, &f))
+                let matched = target.lifetime.alive()
+                    && foreground::foreground().is_some_and(|f| same_window(&target.window, &f))
                     && target.element.as_ref().is_some_and(|el| {
                         self.uia
                             .focused()

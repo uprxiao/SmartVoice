@@ -20,7 +20,7 @@ function state(){
  const main=api.getMainWindow(),hud=api.getHudWindow();
  const ack=path.join(profile,'tray-state.json');let acknowledged=false;
  try{acknowledged=JSON.parse(fs.readFileSync(ack,'utf8')).closeHintAcknowledged===true;}catch{}
- return {pid:process.pid,mode,main:main?{hwnd:Number(main.getNativeWindowHandle().readBigUInt64LE()),visible:main.isVisible(),focused:main.isFocused(),destroyed:main.isDestroyed(),renderer_crashed:main.webContents.isCrashed(),renderer_id:main.webContents.id,background_throttling:main.webContents.getLastWebPreferences().backgroundThrottling}:null,
+ return {pid:process.pid,mode,main:main?{hwnd:Number(main.getNativeWindowHandle().readBigUInt64LE()),visible:main.isVisible(),focused:main.isFocused(),destroyed:main.isDestroyed(),renderer_crashed:main.webContents.isCrashed(),renderer_id:main.webContents.id,background_throttling:main.webContents.getBackgroundThrottling()}:null,
  hud:hud?{hwnd:Number(hud.getNativeWindowHandle().readBigUInt64LE()),visible:hud.isVisible(),focused:hud.isFocused()}:null,
  main_window_count:BrowserWindow.getAllWindows().filter(w=>w!==hud).length,
  acknowledged,ack_file_present:fs.existsSync(ack),pending,children:[...children].map(c=>({pid:c.pid,exit_confirmed:c.ownedExitConfirmed===true,exit_code:c.exitCode,signal:c.signalCode}))};

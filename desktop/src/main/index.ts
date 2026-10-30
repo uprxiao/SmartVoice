@@ -225,7 +225,7 @@ async function main(): Promise<void> {
   debug('ipc');
 
   const interrupt = () => {
-    if (sessionService.isBusy() && ['created', 'streaming', 'finalizing', 'refining'].includes(sessionService.status.state)) {
+    if (sessionService.isBusy()) {
       void sessionService.cancel().catch(() => sessionService.reset());
     }
     native.invalidate();

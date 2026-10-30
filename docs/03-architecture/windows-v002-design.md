@@ -54,6 +54,7 @@ S4 Windows 实测发现 POSIX 目录 fd 的 fsync 返回 EPERM。执行日志仍
 1. Main 核当前账号/会话/result/hash/review，再 claim 并持久化 started；这套既有执行日志不能由 Windows 分支绕过。Windows 不向 helper 传 token、账号凭据或输入框原有全文。
 2. helper 在有界等待修饰键释放后选取最终目标；不能把独立探针里“固定夹具 PID”的限制复制到正式通用输入。正常路径不恢复焦点；显式路径只在用户明确选择、可核验且当前仍是本应用/原目标时尝试恢复，必须读回实际前台与焦点成功，失败就保留结果。
    显式目标捕获时，另冻结 `GA_ROOT` 顶层 HWND、PID 与进程创建时间；后续必须仍是该同一根窗口，保留原控件引用、原文和选区。UIA 恢复后前台可能返回原 Edit 子控件，须用它实际所属的 `GA_ROOT` 与冻结身份核对，不能只比较 PID，也不能使用会合并拥有者弹窗的 `GA_ROOTOWNER`。原始 HWND 失效、根身份或控件/基线变化仍拒绝；正常自动输入的前台比较不变。依据：[GetAncestor 的根与拥有者区别](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getancestor)。
+   真实复用实验发现：经典 Edit 销毁后，Windows 可复用完整数值 HWND，UIA 比较也可能把新控件视为原控件。捕获 UIA/基线前，使用本产品固定私有窗口属性名，为当前窗口及同进程原生焦点 HWND 留下无正文的生命周期标记；同一存活窗口的缓存共享标记，销毁重建后必须失效。校验、紧邻派发与严格读回都核标记，无法建立/读取或被改动即停止，不靠延迟事件回调判断销毁。释放/逐出/正常退出只移除仍属于自己的标记；强制终止后不含内容的旧标记可由下次捕获替换，或随目标窗口销毁消失。不分配独立全局 atom，不占用每次捕获的新名称。适用相同/较低 IL，仍先执行原准入检查。依据：[SetPropW/UIPI](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setpropw)、[只移除自己添加的属性](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-removepropw)。
    显式恢复先激活原顶层窗口；若辅助进程被系统拒绝，仅在当前仍为本应用/原目标且生命周期未变时，向原先缓存的 UIA 控件调用 `SetFocus`。最多 250ms 等待冻结根窗口与原焦点控件实际稳定；激活返回时可能短暂无前台，不能立即把瞬态当作持久失效。不得选择其他控件或注入激活按键；之后仍比较原文/选区/生命周期，超时零写入。此准备包含在原 5000ms RPC 上限内。系统可能拒绝辅助进程激活，API 返回成功也不替代实际前台/控件读回，依据：[Win32 激活限制](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow)、[UIA SetFocus](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationelement-setfocus)。
 3. 准入核当前可见顶层应用窗口、非本应用/桌面/任务栏、可访问交互桌面、PID+进程创建时间、完整性级别。普通应用拒绝更高 IL；读取失败不靠 TokenElevation 或 SendInput 成功值推定可输入。
 4. UIA 可读时先核密码/保护/禁用/只读；明确按钮、菜单等非输入控件拒绝。Custom/Pane 等未知属性不能仅因不可读而一律拒绝。每次正文读回前再次检查保护属性，不读已知密码内容；未知安全属性仍有已明示限制。
@@ -63,6 +64,8 @@ S4 Windows 实测发现 POSIX 目录 fd 的 fsync 返回 EPERM。执行日志仍
 8. 等待目标处理，350ms 后开始有界读回，最多再等 1000ms。全文必须逐字符等于“当前前缀+原样结果+当前后缀”，光标位于结果末尾且选区长度为零，目标仍为同控件，才 inserted/written/observable=true。否则 unverified/unknown；UTF-16 边界不能拆代理对，跨业务层偏移仍按码点换算。
    每次读取前和返回后都核同一个绝对截止时间；单次 UIA 阻塞后才返回的精确匹配也属于迟到，必须 unverified/unknown。平台调用未返回时仍由原 5000ms 子进程超时保护，不将迟到输出当作核验成功。
 9. 仅剪贴板仍为本轮发布版本时恢复；读回结果不依赖恢复成功伪造。原生异常、超时、取消后副作用不明不能改报 failed 或自动再粘贴；Main 回执按实际 none/written/unknown 登记，历史继续保留结果。
+
+   休眠/Renderer 中断先取消任何 busy 操作，包括 state 已为 ready 但 claim 或插入仍在途的情况，再 invalidate 原生进程；不能只按音频状态判断。已经派发并终止 helper 的情况仍为 unknown；实测强制终止可能发生在剪贴板恢复前，此时不能宣称已恢复原剪贴板，需保留实际观察。该故障参数与正常粘贴/恢复参数分开，不新增粘贴或自动复制补偿。
 
 ### 修饰键与剪贴板
 

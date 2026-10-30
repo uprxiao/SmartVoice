@@ -16,6 +16,11 @@ module.exports=async function(api,root,folder,track){
  // Execute this frozen source expression unchanged, with actual production
  // objects. This injects a software boundary, not a physical OS sleep.
  const makeInterrupt=new Function('sessionService','native','hudNative','hudVisibility',`return ${expression};`);
+ const rpcSource=ts.createSourceFile('rpc.ts',fs.readFileSync(path.join(root,'src/main/rpc.ts'),'utf8'),ts.ScriptTarget.Latest,true),cancelNodes=[];
+ function visitRpc(node){if(ts.isPropertyAssignment(node)&&node.name.getText(rpcSource)==='cancel'&&node.initializer.getText(rpcSource).includes('deps.sessions.cancel'))cancelNodes.push(node);ts.forEachChild(node,visitRpc);}visitRpc(rpcSource);
+ check(cancelNodes.length===1,'Exact production RPC cancellation handler unavailable');
+ const cancelCode=ts.transpileModule('const handler='+cancelNodes[0].initializer.getText(rpcSource),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+ const makeCancel=new Function('deps','currentSession',cancelCode+';return handler;');
  const server=new WebSocketServer({host:'127.0.0.1',port:17863});
  await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
  let current=null;
@@ -36,11 +41,14 @@ module.exports=async function(api,root,folder,track){
  });
  function facts(){
   const s=current;if(!s)return null;
-  return {stage:s.stage,boundary:s.boundary,signal:s.signal,boundary_applied:s.applied,pending:s.pending,status:s.service.current(),claims:s.claims,writes:s.writes,receipts:s.receipts,marks:s.claims.map(claim=>s.journal.read(s.user,claim.insertion_id)).filter(Boolean),actual_write_response_held:s.actualWriteResponseHeld===true,buffered_response_bytes:s.oldChild?.stdout.readableLength??0,children:s.children.map(child=>({pid:child.pid,exit_code:child.exitCode,signal:child.signalCode})),interrupt_source_sha256:crypto.createHash('sha256').update(expression).digest('hex')};
+  return {stage:s.stage,boundary:s.boundary,signal:s.signal,boundary_applied:s.applied,dispatch_to_boundary_ms:s.dispatch_to_boundary_ms??null,pending:s.pending,status:s.service.current(),claims:s.claims,writes:s.writes,receipts:s.receipts,marks:s.claims.map(claim=>s.journal.read(s.user,claim.insertion_id)).filter(Boolean),actual_write_response_held:s.actualWriteResponseHeld===true,buffered_response_bytes:s.oldChild?.stdout.readableLength??0,children:s.children.map(child=>({pid:child.pid,exit_code:child.exitCode,signal:child.signalCode})),interrupt_source_sha256:crypto.createHash('sha256').update(expression).digest('hex')};
  }
  function apply(s){
   check(!s.applied,'Boundary already applied');s.applied=true;
-  if(s.boundary==='cancel')void s.service.cancel();
+  if(s.boundary==='cancel'){
+   if(s.stage==='prepare')void s.service.cancel(); // Internal pre-session cancellation has no RPC session id yet.
+   else void s.cancel(s.service.currentSessionId());
+  }
   else if(s.boundary==='account'){
    s.snapshot={user:{id:crypto.randomUUID()},settings:{learning_enabled:true,locale:'zh-CN'}};
    s.service.invalidateAccount();s.native.invalidate();
@@ -57,7 +65,7 @@ module.exports=async function(api,root,folder,track){
   async command(request){
    switch(request.action){
     case 'sessionPrepare':{
-     await dispose();check(['prepare','claim','journal','helper','late'].includes(request.stage)&&['cancel','account','suspend'].includes(request.boundary),'Unknown frozen session parameter');
+     await dispose();check(['prepare','claim','journal','helper','late','modifier','journal-io'].includes(request.stage)&&['cancel','account','suspend'].includes(request.boundary),'Unknown frozen session parameter');
      const user=crypto.randomUUID(),sessionId=crypto.randomUUID(),directory=path.join(folder,'journal-'+crypto.randomUUID());fs.mkdirSync(directory);
      const s={stage:request.stage,boundary:request.boundary,user,sessionId,snapshot:{user:{id:user},settings:{learning_enabled:true,locale:'zh-CN'}},gate:deferred(),signal:null,applied:false,pending:null,claims:[],writes:[],receipts:[],children:[],sockets:new Set(),gateUsed:false};current=s;
      s.result={result_id:crypto.randomUUID(),attempt_no:1,attempt_kind:'initial',raw_text:'中文🙂',refined_text:'中文🙂',review_required:false,review_reason:null,text_hash:crypto.createHash('sha256').update('中文🙂').digest('hex'),dictionary_version:0,stop_to_result_ms:1,created_at:new Date().toISOString()};
@@ -67,6 +75,7 @@ module.exports=async function(api,root,folder,track){
       if(['insert','insertCurrent'].includes(action)){
        s.writes.push({action,insertion_id:data.insertion_id,at:new Date().toISOString()});
        if(['helper','late'].includes(s.stage)){s.oldChild=s.native.child;s.oldChild.stdout.pause();s.signal='dispatched';}
+       if(s.stage==='modifier'){s.dispatchedAt=performance.now();s.signal='dispatched';}
       }
       const response=originalCall(action,data);const child=s.native.child;
       if(['insert','insertCurrent'].includes(action))s.writeRequestId=s.native.seq;
@@ -81,9 +90,11 @@ module.exports=async function(api,root,folder,track){
       },insertionReceipt:async(sid,id,body)=>{const receipt={...body,session_id:sid,insertion_id:id,result_id:s.result.result_id,replayed:false,claimed_at:'',completed_at:null};s.receipts.push(receipt);return receipt;},clearTokens:()=>{}};
      const auth={get current(){return s.snapshot;},get learningEnabled(){return s.snapshot.settings.learning_enabled;},ensure:()=>s.snapshot};
      s.journal=new api.InsertionJournal(directory);const begin=s.journal.begin.bind(s.journal);
-     s.journal.begin=intent=>{const actual=begin(intent);if(s.stage==='journal'&&!s.gateUsed){s.gateUsed=true;s.signal='journal';apply(s);}return actual;};
+     if(s.stage==='journal-io')fs.writeFileSync(path.join(directory,crypto.createHash('sha256').update(user).digest('hex')),'Owned fictional directory collision',{flag:'wx'});
+     s.journal.begin=intent=>{if(s.stage==='journal-io')s.signal='journal-io';const actual=begin(intent);if(s.stage==='journal'&&!s.gateUsed){s.gateUsed=true;s.signal='journal';apply(s);}return actual;};
      s.service=new api.SessionService(http,s.native,auth,s.journal,()=>{},()=>{});
      s.interrupt=makeInterrupt(s.service,s.native,{invalidate:()=>{}},{reset:()=>{}});
+     s.cancel=makeCancel({sessions:s.service,native:s.native},id=>{check(id===s.service.currentSessionId(),'Current session guard failed');});
      await s.native.call('permission');return facts();
     }
     case 'sessionBegin':{
@@ -104,7 +115,7 @@ module.exports=async function(api,root,folder,track){
      const actual=Buffer.concat(s.heldBytes).toString('utf8').split('\n').filter(Boolean).flatMap(line=>{try{return[JSON.parse(line)];}catch{return[];}});
      s.actualWriteResponseHeld=actual.some(value=>value.id===s.writeRequestId&&['inserted','unverified','failed'].includes(value.status));return facts();
     }
-    case 'sessionBoundary':{const s=current;apply(s);s.gate.resolve();if(s.stage==='late'){
+    case 'sessionBoundary':{const s=current;if(s.stage==='modifier')s.dispatch_to_boundary_ms=performance.now()-s.dispatchedAt;apply(s);s.gate.resolve();if(s.stage==='late'){
      check(s.actualWriteResponseHeld,'Actual write response was not acquired');
      // Deliver exactly the bytes read from this owned old helper, unchanged.
      // The real bridge's child ownership guard must reject stale delivery.
