@@ -32,11 +32,11 @@ async def snapshot(path, session_id=None):
             JOIN results r ON r.session_id=s.id AND r.user_id=s.user_id
             JOIN session_attempts a ON a.user_id=r.user_id AND a.session_id=r.session_id
             AND a.attempt_no=r.attempt_no
-            WHERE ($1::uuid IS NULL OR s.id=$1) ORDER BY r.attempt_no""", session_id)
+            WHERE ($1::text IS NULL OR s.id=$1::text) ORDER BY r.attempt_no""", session_id)
         receipts = await conn.fetch("""SELECT i.id,i.session_id,i.result_id,i.status,
             i.observable,i.error_code FROM insertions i JOIN sessions s
             ON s.id=i.session_id AND s.user_id=i.user_id
-            WHERE ($1::uuid IS NULL OR s.id=$1) ORDER BY i.id""", session_id)
+            WHERE ($1::text IS NULL OR s.id=$1::text) ORDER BY i.id""", session_id)
         learning = await conn.fetchval("SELECT count(*) FROM learning_events")
         users = await conn.fetch("SELECT email,learning_enabled FROM users ORDER BY email")
         return {"results": [dict(row) for row in rows], "insertions": [dict(row) for row in receipts],

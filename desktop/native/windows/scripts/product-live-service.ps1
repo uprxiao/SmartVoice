@@ -376,8 +376,11 @@ finally {
         if(-not $data.login_cleanup_confirmed){$data.status='fail'}
     }
     if(Test-Path $environment){& $PythonExe $fixture stop-pg --environment $environment;$data.postgres_cleanup_confirmed=($LASTEXITCODE -eq 0);if(-not $data.postgres_cleanup_confirmed){$data.status='fail'}}
-    if($ExpandedUI -and (Test-Path $EvidenceDir)){
-        foreach($entry in @(@{file='desktop-controls.json';ids=@('LIVE-CONTROL-01','LIVE-CONTROL-02')},@{file='desktop-crash-recovery.json';ids=@('LIVE-CONTROL-03')},@{file='desktop-controls-restart.json';ids=@('LIVE-CONTROL-04')},@{file='journal-restore.json';ids=@('LIVE-JOURNAL-02','LIVE-JOURNAL-03')},@{file='admin-journal.json';ids=@('LIVE-JOURNAL-ADMIN')},@{file='journal-crash-record.json';ids=@('LIVE-JOURNAL-01')})){
+    if(Test-Path $EvidenceDir){
+        $entries=@(@{file='desktop-register.json';ids=@('LIVE-DESKTOP-01','LIVE-DESKTOP-02','LIVE-DESKTOP-03','LIVE-DESKTOP-04','LIVE-DESKTOP-05')},@{file='desktop-resume.json';ids=@('LIVE-DESKTOP-06')},@{file='desktop-logout.json';ids=@('LIVE-DESKTOP-07')},@{file='admin-ui.json';ids=@('LIVE-ADMIN-01','LIVE-ADMIN-02','LIVE-ADMIN-03')})
+        if($HistoryInsert){$entries+=@(@{file='desktop-history.json';ids=@('LIVE-HISTORY-01','LIVE-HISTORY-02','LIVE-HISTORY-03','LIVE-HISTORY-04')},@{file='admin-history.json';ids=@('LIVE-ADMIN-HISTORY-01')})}
+        if($ExpandedUI){$entries+=@(@{file='desktop-controls.json';ids=@('LIVE-CONTROL-01','LIVE-CONTROL-02')},@{file='desktop-crash-recovery.json';ids=@('LIVE-CONTROL-03')},@{file='desktop-controls-restart.json';ids=@('LIVE-CONTROL-04')},@{file='journal-restore.json';ids=@('LIVE-JOURNAL-02','LIVE-JOURNAL-03')},@{file='admin-journal.json';ids=@('LIVE-JOURNAL-ADMIN')},@{file='journal-crash-record.json';ids=@('LIVE-JOURNAL-01')})}
+        foreach($entry in $entries){
             $file=Join-Path $EvidenceDir $entry.file
             if(-not(Test-Path $file)){Write-NewJson @{planned=$entry.ids.Count;cases=@($entry.ids|ForEach-Object{@{id=$_;status='blocked';reason='Earlier owned Main/UI preparation failed; no pass inferred'}})} $file}
         }
