@@ -334,6 +334,7 @@ try {
                 foreach($child in $journalHelpers){Assert-Live ($child.WaitForExit(3000)) 'Old helper remained after controlled Main hard-exit'}
                 $data.desktop_stops+=@(@{main_exit_confirmed=$true;controlled_journal_hard_exit=$true;helpers=@($journalHelpers|ForEach-Object{@{exit_confirmed=$_.HasExited}})});$desktop=$null
                 $marks=@(Get-ChildItem (Join-Path $profileDir 'insertion-marks') -Recurse -Filter '*.json' -File|ForEach-Object{Get-Content -Raw $_.FullName|ConvertFrom-Json}|Where-Object{$_.session_id -eq $journalSeed.session_id})
+                Write-NewJson @{scope='owned synthetic target after real Main/helper hard-exit; not a restart pass';actual=$observed;main_exit_confirmed=$true;helpers_exit_confirmed=$true;marks=@($marks|Select-Object session_id,insertion_id,phase,receipt_confirmed)} (Join-Path $EvidenceDir 'journal-hard-exit-observation.json')
                 $beforeRestoreText=& $PythonExe $historyFixture snapshot --environment $environment --slot journal;Assert-Live ($LASTEXITCODE -eq 0) 'Independent pre-restore SQL failed';$beforeRestore=$beforeRestoreText|ConvertFrom-Json
                 Write-NewJson $beforeRestore (Join-Path $EvidenceDir 'database-journal-before-restore.json')
                 Assert-Live ($marks.Count -eq 1 -and $marks[0].phase -eq 'started' -and $beforeRestore.insertions.Count -eq 1 -and $beforeRestore.insertions[0].status -eq 'reserved') 'BLOCKED: hard-exit did not acquire started/reserved before receipt; no restart pass inferred'

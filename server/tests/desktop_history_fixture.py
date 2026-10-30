@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import locale
 from pathlib import Path
 import struct
 import sys
@@ -129,8 +130,19 @@ if __name__ == "__main__":
     parser.add_argument("--environment", required=True, type=Path)
     parser.add_argument("--slot", choices=("history", "journal"), default="history")
     args = parser.parse_args()
-    scope_id = None
-    if args.command == "snapshot" and args.slot == "journal":
-        scope_id = json.loads((Path(environment(args.environment)["run_dir"]) / "journal-seed.json").read_text())["session_id"]
-    print(json.dumps(asyncio.run(seed(args.environment, args.slot) if args.command == "seed" else snapshot(args.environment, scope_id)),
-                     ensure_ascii=True, default=str))  # Portable JSON pipe; decoded fixture text stays exact.
+    phase = "read_journal_scope"
+    try:
+        scope_id = None
+        if args.command == "snapshot" and args.slot == "journal":
+            scope_id = json.loads((Path(environment(args.environment)["run_dir"]) / "journal-seed.json").read_text(encoding="utf-8"))["session_id"]
+        phase = "owned_database_command"
+        result = asyncio.run(seed(args.environment, args.slot) if args.command == "seed" else snapshot(args.environment, scope_id))
+    except Exception as error:
+        if args.command == "snapshot":
+            failure = Path(environment(args.environment)["run_dir"]) / f"{args.slot}-snapshot-failure.json"
+            if not failure.exists():
+                # No database URL, exception message, account or token in artifacts.
+                write_new(failure, {"status": "fail", "phase": phase, "error_type": type(error).__name__,
+                    "default_text_encoding": locale.getpreferredencoding(False), "utf8_mode": sys.flags.utf8_mode})
+        raise
+    print(json.dumps(result, ensure_ascii=True, default=str))  # Portable JSON pipe; decoded fixture text stays exact.
