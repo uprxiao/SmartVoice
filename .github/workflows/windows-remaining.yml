@@ -55,7 +55,8 @@ jobs:
         run: |
           $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
           $output=Join-Path $env:RUNNER_TEMP 'svi-owned-handle-fixture.exe'
-          & $compiler /nologo /target:winexe /platform:x64 "/out:$output" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll desktop/native/windows/fixtures/handle-reuse.cs
+          $source=(Resolve-Path -LiteralPath 'desktop/native/windows/fixtures/handle-reuse.cs').ProviderPath
+          & $compiler /nologo /target:winexe /platform:x64 "/out:$output" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll $source
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           "SVI_HANDLE_REUSE_EXE=$output" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: pnpm/action-setup@v4

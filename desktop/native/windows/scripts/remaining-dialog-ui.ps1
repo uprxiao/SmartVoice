@@ -10,7 +10,9 @@ $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -ne 'true' -or $ExpectedExeSha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Disposable CI UI observer required'}
 $process=Get-Process -Id $TargetPid -ErrorAction Stop
 $facts=Get-CimInstance Win32_Process -Filter "ProcessId=$TargetPid"
-if($facts.ParentProcessId -ne $OwnerPid -or (Get-FileHash $process.Path -Algorithm SHA256).Hash -ne $ExpectedExeSha256){throw 'Refusing a dialog outside the exact owned Electron process'}
+$hasher=[Security.Cryptography.SHA256]::Create()
+try{$actualHash=[BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($process.Path))).Replace('-','')}finally{$hasher.Dispose()}
+if($facts.ParentProcessId -ne $OwnerPid -or $actualHash -ne $ExpectedExeSha256){throw 'Refusing a dialog outside the exact owned Electron process'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $root=[System.Windows.Automation.AutomationElement]::RootElement

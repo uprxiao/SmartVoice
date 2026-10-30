@@ -20,7 +20,7 @@ function state(){
  const main=api.getMainWindow(),hud=api.getHudWindow();
  const ack=path.join(profile,'tray-state.json');let acknowledged=false;
  try{acknowledged=JSON.parse(fs.readFileSync(ack,'utf8')).closeHintAcknowledged===true;}catch{}
- return {pid:process.pid,mode,main:main?{hwnd:Number(main.getNativeWindowHandle().readBigUInt64LE()),visible:main.isVisible(),focused:main.isFocused(),destroyed:main.isDestroyed(),renderer_id:main.webContents.id,background_throttling:main.webContents.getLastWebPreferences().backgroundThrottling}:null,
+ return {pid:process.pid,mode,main:main?{hwnd:Number(main.getNativeWindowHandle().readBigUInt64LE()),visible:main.isVisible(),focused:main.isFocused(),destroyed:main.isDestroyed(),renderer_crashed:main.webContents.isCrashed(),renderer_id:main.webContents.id,background_throttling:main.webContents.getLastWebPreferences().backgroundThrottling}:null,
  hud:hud?{hwnd:Number(hud.getNativeWindowHandle().readBigUInt64LE()),visible:hud.isVisible(),focused:hud.isFocused()}:null,
  main_window_count:BrowserWindow.getAllWindows().filter(w=>w!==hud).length,
  acknowledged,ack_file_present:fs.existsSync(ack),pending,children:[...children].map(c=>({pid:c.pid,exit_confirmed:c.ownedExitConfirmed===true,exit_code:c.exitCode,signal:c.signalCode}))};
@@ -32,6 +32,15 @@ async function command(request){
   case 'show':win=await api.createMainWindow({closeToTray:w=>void tray.close(w)});win.show();win.focus();return state();
   case 'concurrentWindows':{const windows=await Promise.all(Array.from({length:6},()=>api.createMainWindow({closeToTray:w=>void tray.close(w)})));return{ids:windows.map(w=>w.webContents.id),state:state()};}
   case 'destroyAndRebuild':{const old=api.getMainWindow();check(old&&!old.isDestroyed(),'Owned main missing');const oldId=old.webContents.id;old.destroy();const windows=await Promise.all(Array.from({length:6},()=>api.createMainWindow({closeToTray:w=>void tray.close(w)})));win=windows[0];win.show();return{old_id:oldId,ids:windows.map(w=>w.webContents.id),state:state()};}
+  case 'crashAndReopen':{
+   const old=api.getMainWindow();check(old&&!old.isDestroyed(),'Owned main missing');const oldId=old.webContents.id;
+   const gone=new Promise(resolve=>old.webContents.once('render-process-gone',(_,details)=>resolve(details)));
+   old.webContents.forcefullyCrashRenderer();
+   const details=await Promise.race([gone,wait(4000).then(()=>{throw Error('Actual renderer crash event not observed');})]);
+   const crashed={renderer_id:oldId,is_crashed:old.webContents.isCrashed(),event:details};
+   const windows=await Promise.all(Array.from({length:6},()=>api.createMainWindow({closeToTray:w=>void tray.close(w)})));
+   win=windows[0];win.show();return{crashed,ids:windows.map(w=>w.webContents.id),state:state()};
+  }
   case 'hud':{check(['show','hide','move'].includes(request.state),'HUD state outside fixture');const hud=await api.createHudWindow();if(request.state==='hide')api.hideHud();else{if(request.state==='move')hud.setPosition(30+(request.iteration%5)*10,30+(request.iteration%3)*10,false);api.showHud();}return state();}
   case 'bridgePrepare':{await stopBridge();pending=null;bridge=new api.NativeVoiceInput();const permission=await bridge.call('permission');track(bridge.child);return{permission,pid:bridge.child?.pid,parent_pid:process.pid};}
   case 'bridgeWrite':{

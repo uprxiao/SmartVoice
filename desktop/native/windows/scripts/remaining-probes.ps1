@@ -16,8 +16,8 @@ $script:results=[ordered]@{}
 $script:boundaryCleanupOk=$true
 $planned=switch($Suite){
  'clipboard'{@('R14-snapshot-publication-race','R14-partial-write-restore','R14-partial-and-restore-failure')}
- 'ui'{@('R08-bridge-invalidate','R22-first-close-persist','R22-restart-close','R22-write-failure')}
- 'boundaries'{@('R03-exact-hwnd-reuse','R06-process-query-denied','R06-no-foreground','R06-inaccessible-input-desktop')}
+ 'ui'{@('R22-first-close-persist','R22-restart-close','R22-write-failure','R23-renderer-crash-reopen')}
+ 'boundaries'{@('R03-exact-hwnd-reuse','R06-process-query-denied','R06-no-foreground','R06-inaccessible-input-desktop','R04-natural-cold-chrome')}
  default{@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R04-notepad-truncated-uia','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')}
 }
 foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
@@ -232,6 +232,32 @@ try{
    }
   }
   $null=File-Rpc $reuseFolder @{action='quit'};Check ($reuseProcess.WaitForExit(5000)) 'Owned classic window process did not exit'
+  Case 'R04-natural-cold-chrome' {
+   $chromeExe=@((Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),(Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe'))|Where-Object{Test-Path $_}|Select-Object -First 1
+   Check ([bool]$chromeExe) 'BLOCKED: Chrome executable unavailable'
+   $samples=@();$acquired=$false
+   foreach($iteration in 1..3){
+    $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
+    $page=[Uri]::new((Join-Path $desktop 'native/windows/fixtures/chrome.html')).AbsoluteUri+'?kind=input'
+    $chrome=Start-Owned $chromeExe @("--user-data-dir=$(Join-Path $OutputDir "natural-cold-$iteration")",'--no-first-run','--no-default-browser-check','--disable-sync',"--app=$page","--remote-debugging-port=$port",'--remote-debugging-address=127.0.0.1')
+    try{
+     & node (Join-Path $PSScriptRoot 'chrome-ready.cjs') $port $page 45000 (Join-Path $OutputDir "natural-cold-$iteration-dom.json")
+     Check ($LASTEXITCODE -eq 0) 'BLOCKED: natural cold Chrome DOM not ready'
+     Check ((Native 'probeFocus' @{fixture_pid=$chrome.Id}).focused) 'BLOCKED: natural cold Chrome foreground not acquired'
+     $initial=Native 'probeReadNow' @{fixture_pid=$chrome.Id};$null=Native 'probeSeedClipboard'
+     $result=Product 'insertCurrent' @{insertion_id="natural-cold-$iteration";text='中文🙂'}
+     $final=Native 'capture' @{fixture_pid=$chrome.Id};$clip=Native 'probeClipboardState'
+     $readProperty=$initial.PSObject.Properties['readback'];$readOk=if($null -ne $readProperty){$readProperty.Value.PSObject.Properties['Ok']}else{$null}
+     $initiallyUnreadable=($null -eq $readOk -or $null -eq $readOk.Value.caret_utf16)
+     $samples+=@{iteration=$iteration;initial=$initial;result=$result;final=$final;initially_unreadable=$initiallyUnreadable}
+     Check ($result.status -eq 'inserted' -and $result.observable -and $result.effect -eq 'written' -and $final.readback.text -ceq 'BEGIN 中文🙂 END' -and $final.readback.caret_utf16 -eq 10 -and $final.readback.selection_utf16_len -eq 0 -and $clip.text -ceq 'SVI original clipboard') 'Cold formal helper did not strictly verify the actual result'
+     if($initiallyUnreadable){$acquired=$true;break}
+    }finally{Stop-Owned $chrome}
+   }
+   Write-NewJson @{samples=$samples;natural_initial_unreadable_acquired=$acquired} (Join-Path $OutputDir 'natural-cold-observations.json')
+   Check $acquired 'BLOCKED: all3 natural initial reads were already readable; missing-pattern transition not observed, no fake return substituted'
+   return @{samples=$samples;scope='natural fresh Chrome, only DOM readiness before one raw first UIA query; actual formal450ms warmup and strict result'}
+  }
  }else{
  Case 'R10-invalid-fields' {
   $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
@@ -371,6 +397,7 @@ try{
   return @{before=$before;native_notice=$dialog;before_ack=$waiting;actual_ack=$ack;first_hidden=$hidden;second_hidden=$again;second_dialog=$noDialog}
  }
  Case 'R23-window-rebuild' {$actual=Host-Rpc 'destroyAndRebuild';Check (@($actual.ids|Select-Object -Unique).Count -eq 1 -and $actual.ids[0] -ne $actual.old_id -and -not $actual.state.main.destroyed -and $actual.state.main_window_count -eq 1) 'Production window module failed unique rebuild';return $actual}
+ Case 'R23-renderer-crash-reopen' {$actual=Host-Rpc 'crashAndReopen';$script:fileSequence++;Write-NewJson $actual (Join-Path $OutputDir "renderer-crash-$($script:fileSequence).json");Check ($actual.crashed.is_crashed -and @($actual.ids|Select-Object -Unique).Count -eq 1 -and $actual.ids[0] -ne $actual.crashed.renderer_id -and -not $actual.state.main.renderer_crashed -and $actual.state.main_window_count -eq 1) 'Crashed renderer was reused rather than replaced on actual reopen';return $actual}
  Close-Host
  $restarted=Open-Host 'restart' $trayProfile
  Case 'R22-restart-close' {Check ($script:results['R22-first-close-persist'].status -eq 'pass') 'BLOCKED: first-close acknowledgement precondition failed';Check $restarted.acknowledged 'Close notice not persisted across actual Electron restart';Close-Main;$hidden=Wait-Host {param($s) -not $s.main.visible};$dialog=Dialog;Check ($dialog.dialogs.Count -eq 0) 'Persistent notice repeated after restart';return @{initial=$restarted;hidden=$hidden;dialog=$dialog}}
