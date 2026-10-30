@@ -18,7 +18,7 @@ on:
       remaining_suite:
         description: Supplementary scope (standard parameters or controlled clipboard failures)
         type: choice
-        options: [standard, clipboard, ui, boundaries]
+        options: [standard, clipboard, ui, boundaries, sessions]
         default: standard
       expanded_ui:
         description: Add actual Main shortcut persistence and renderer crash recovery checks

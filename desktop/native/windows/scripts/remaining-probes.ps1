@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OutputDir,[switch]$Worker,[ValidateSet('standard','clipboard','ui','boundaries')][string]$Suite='standard')
+param([Parameter(Mandatory=$true)][string]$OutputDir,[switch]$Worker,[ValidateSet('standard','clipboard','ui','boundaries','sessions')][string]$Suite='standard')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($env:GITHUB_ACTIONS -ne 'true'){throw 'Disposable CI only'}
@@ -18,6 +18,7 @@ $planned=switch($Suite){
  'clipboard'{@('R14-snapshot-publication-race','R14-partial-write-restore','R14-partial-and-restore-failure')}
  'ui'{@('R22-first-close-persist','R22-restart-close','R22-write-failure','R23-renderer-crash-reopen')}
  'boundaries'{@('R03-exact-hwnd-reuse','R06-process-query-denied','R06-no-foreground','R06-inaccessible-input-desktop','R04-natural-cold-chrome')}
+ 'sessions'{foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){"R08-$stage-$boundary"}}}
  default{@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R04-notepad-truncated-uia','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')}
 }
 foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
@@ -47,7 +48,7 @@ if(-not $Worker){
  if($Suite -eq 'clipboard'){$plan.test_executable_sha256=(Get-FileHash $env:SVI_CLIPBOARD_UNIT_EXE).Hash}
  if($Suite -eq 'boundaries'){$plan.handle_fixture_sha256=(Get-FileHash $env:SVI_HANDLE_REUSE_EXE).Hash}
  $repo=Split-Path $desktop -Parent
- foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','desktop/native/windows/fixtures/handle-reuse.cs','desktop/native/windows/fixtures/remaining-win32-boundaries.cs','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
+ foreach($file in @('desktop/src/main/core/native-input.ts','desktop/src/main/app/window.ts','desktop/src/main/app/windows-tray.ts','desktop/native/windows/scripts/remaining-probes.ps1','desktop/native/windows/scripts/remaining-dialog-ui.ps1','desktop/native/windows/fixtures/remaining-electron.cjs','desktop/native/windows/fixtures/remaining-modules.ts','desktop/native/windows/fixtures/remaining-sessions.cjs','desktop/src/main/index.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/native/windows/fixtures/handle-reuse.cs','desktop/native/windows/fixtures/dialog-native.cs','desktop/native/windows/fixtures/remaining-win32-boundaries.cs','docs/04-test/test-cases-windows-v002.md')){$plan.inputs+=@{path=$file;sha256=(Get-FileHash (Join-Path $repo $file)).Hash}}
  Write-NewJson $plan (Join-Path $OutputDir 'plan.json')
  try{
   $workerProcess=Start-Owned $verify @('--medium',(Get-Command pwsh).Source,'-NoProfile','-File',$PSCommandPath,'-Worker','-OutputDir',$OutputDir,'-Suite',$Suite) -Redirect
@@ -128,7 +129,7 @@ function Close-Host(){
 }
 function Dialog([string]$Action='inspect'){
  $script:fileSequence++;$file=Join-Path $OutputDir "dialog-$($script:fileSequence).json"
- $p=Start-Owned (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe') @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'remaining-dialog-ui.ps1'),'-TargetPid',[string]$script:hostProcess.Id,'-OwnerPid',[string]$PID,'-ExpectedExeSha256',(Get-FileHash $electron).Hash,'-OutputFile',$file,'-Action',$Action) -Redirect
+ $p=Start-Owned (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe') @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'remaining-dialog-ui.ps1'),'-TargetPid',[string]$script:hostProcess.Id,'-OwnerPid',[string]$PID,'-ExpectedExeSha256',(Get-FileHash $electron).Hash,'-OutputFile',$file,'-NativeDll',$env:SVI_DIALOG_NATIVE_DLL,'-ExpectedNativeDllSha256',(Get-FileHash $env:SVI_DIALOG_NATIVE_DLL).Hash,'-Action',$Action) -Redirect
  $dialogOut=$p.StandardOutput.ReadToEndAsync();$dialogErr=$p.StandardError.ReadToEndAsync()
  Check ($p.WaitForExit(15000) -and $dialogOut.Wait(1000) -and $dialogErr.Wait(1000)) 'Owned native dialog observer timeout'
  [IO.File]::WriteAllText((Join-Path $OutputDir "dialog-$($script:fileSequence).stdout.txt"),$dialogOut.Result,$utf8)
@@ -185,6 +186,35 @@ try{
     return @{control=$control;actual=$actual;before=$before;after=$after;unit_exit=$unit.ExitCode;scope='actual production dispatch/Win32 state; test-executable-only scheduling or I/O fault; not natural OS failure/S5'}
    }
   }
+ }elseif($Suite -eq 'sessions'){
+  $null=Open-Host 'normal' (Join-Path $OutputDir 'session-profile')
+  foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){
+   Case "R08-$stage-$boundary" {
+    $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
+    $prepared=Host-Rpc 'sessionPrepare' @{stage=$stage;boundary=$boundary}
+    $null=Host-Rpc 'sessionBegin';$end=[DateTime]::UtcNow.AddSeconds(6)
+    do{$state=Host-Rpc 'sessionState';if($state.signal -eq $stage -or ($stage -in @('helper','late') -and $state.signal -eq 'dispatched')){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+    Check ([bool]$state.signal) 'BLOCKED: exact session stage not acquired'
+    if($stage -in @('helper','late')){
+     do{$actual=Field 'fieldState';if($actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+     Check ($actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.chords.Count -eq 1) 'BLOCKED: actual target consumption before cancellation not acquired'
+     if($stage -eq 'late'){
+      do{$state=Host-Rpc 'sessionCollectResponse';if($state.actual_write_response_held){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+      Check $state.actual_write_response_held 'BLOCKED: actual helper write response not yet available for delayed delivery'
+     }
+    }
+    if(-not $state.boundary_applied){$boundaryState=Host-Rpc 'sessionBoundary'}else{$boundaryState=$state}
+    $end=[DateTime]::UtcNow.AddSeconds(7)
+    do{$settled=Host-Rpc 'sessionState';if($settled.pending.status -ne 'pending'){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+    Check ($settled.pending.status -ne 'pending') 'Old production session did not settle'
+    $after=Field 'fieldState';$clip=Native 'probeClipboardState';$expectedCount=if($stage -in @('helper','late')){1}else{0};$expectedText=if($expectedCount -eq 1){'BEGIN 中文🙂 END'}else{'BEGIN React END'}
+    $new=Host-Rpc 'sessionNewOperation';$final=Field 'fieldState';$done=Host-Rpc 'sessionDispose'
+    $script:fileSequence++;Write-NewJson @{prepared=$prepared;boundary=$boundaryState;settled=$settled;actual=$after;new_operation=$new;final=$final;cleanup=$done} (Join-Path $OutputDir "session-$stage-$boundary-$($script:fileSequence).json")
+    Check ($settled.writes.Count -eq $expectedCount -and $after.value -ceq $expectedText -and $after.chords.Count -eq $expectedCount -and $after.enterCount -eq 0 -and $final.value -ceq $expectedText -and $final.chords.Count -eq $expectedCount -and $clip.text -ceq 'SVI original clipboard' -and $done.exit_confirmed) 'Old session dispatched/replayed after its software boundary or leaked into the next operation'
+    return @{boundary=$boundaryState;settled=$settled;actual=$after;new_operation=$new;cleanup=$done;scope='actual SessionService/journal/bridge/helper and loopback WS; metadata/zeroPCM fixture; exact Main interrupt callback injected as software event, not physical sleep/full Main/S5'}
+   }
+  }}
+  Close-Host
  }elseif($Suite -eq 'boundaries'){
   Add-Type -Path (Join-Path $desktop 'native/windows/fixtures/remaining-win32-boundaries.cs')
   $reuseFolder=Join-Path $OutputDir 'owned-native-handle';[IO.Directory]::CreateDirectory($reuseFolder)|Out-Null
@@ -195,9 +225,9 @@ try{
    Check ((Native 'probeFocus' @{fixture_pid=$reuseProcess.Id}).focused) 'Owned native root unavailable';$null=File-Rpc $reuseFolder @{action='focus'}
    $original=Native 'capture' @{fixture_pid=$reuseProcess.Id};Check ($original.readback.text -ceq 'BEGIN React END' -and $original.readback.caret_utf16 -eq 6 -and $original.readback.selection_utf16_len -eq 5) 'BLOCKED: original classic field not acquired'
    $target=Product 'capture';Check $target.observable 'BLOCKED: original target not observable'
-   $prepared=File-Rpc $reuseFolder @{action='reuse'} 35000
+   $prepared=File-Rpc $reuseFolder @{action='reuse'} 85000
    Write-NewJson $prepared (Join-Path $OutputDir 'handle-reuse-preparation.json')
-   Check ($prepared.actual_same_hwnd_acquired -and $prepared.state.edit_hwnd -eq $reuseReady.edit_hwnd) 'BLOCKED: exact HWND reuse not observed within100000/20sec; full denominator retained'
+   Check ($prepared.actual_same_hwnd_acquired -and $prepared.state.edit_hwnd -eq $reuseReady.edit_hwnd) 'BLOCKED: exact HWND reuse not observed within100000/60sec; full denominator retained'
    $fresh=Native 'capture' @{fixture_pid=$reuseProcess.Id};Check ($fresh.readback.text -ceq 'BEGIN React END' -and $fresh.readback.caret_utf16 -eq 6 -and $fresh.readback.selection_utf16_len -eq 5) 'BLOCKED: replacement field is not independently readable'
    $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState';$validation=Product 'validate' @{target=$target.target};$result=Product 'insert' @{target=$target.target;restoreFocus=$false;insertion_id='reused-native-hwnd';text='MUST NOT WRITE'}
    $actual=File-Rpc $reuseFolder @{action='state'};$after=Native 'probeClipboardState'

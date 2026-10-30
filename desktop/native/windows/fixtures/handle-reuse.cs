@@ -58,7 +58,7 @@ public sealed class HandleReuseFixture : Form {
         var watch=Stopwatch.StartNew();if(!DestroyWindow(edit))throw new Exception("Original HWND was not destroyed");
         int attempts=0;bool acquired=false;
         edit=IntPtr.Zero;
-        while(attempts<100000&&watch.ElapsedMilliseconds<20000){
+        while(attempts<100000&&watch.ElapsedMilliseconds<60000){
             if(edit!=IntPtr.Zero&&!DestroyWindow(edit))throw new Exception("Intermediate owned HWND was not destroyed");
             attempts++;edit=NewEdit();
             if(edit==firstHandle){acquired=true;break;}

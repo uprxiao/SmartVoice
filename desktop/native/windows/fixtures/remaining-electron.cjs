@@ -10,7 +10,7 @@ const folder=path.resolve(folderArg),profile=path.resolve(profileArg);
 if(!folder.startsWith(path.resolve(process.env.SVI_REMAINING_ROOT)+path.sep)||!profile.startsWith(path.resolve(process.env.SVI_REMAINING_ROOT)+path.sep))throw Error('Disposable owned paths required');
 app.setName('SmartVoiceInput');app.setPath('userData',profile);app.setAppPath(root);
 const api=require(path.join(path.resolve(process.env.SVI_REMAINING_MODULE_DIR),'out/main/remaining-modules.cjs'));
-let tray,win,bridge,pending,working=false,stopping=false,seq=0;
+let tray,win,bridge,pending,sessions,working=false,stopping=false,seq=0;
 const seen=new Set(),children=new Set();
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(ok,message)=>{if(!ok)throw Error(message);};
@@ -27,6 +27,10 @@ function state(){
 }
 async function stopBridge(){if(bridge){bridge.dispose();bridge=null;}const end=Date.now()+3500;while([...children].some(c=>c.exitCode===null&&c.signalCode===null)&&Date.now()<end)await wait(20);check([...children].every(c=>c.exitCode!==null||c.signalCode!==null),'Owned real helper exit not confirmed');}
 async function command(request){
+ if(request.action.startsWith('session')){
+  sessions??=await require('./remaining-sessions.cjs')(api,root,folder,track);
+  return sessions.command(request);
+ }
  switch(request.action){
   case 'state':return state();
   case 'show':win=await api.createMainWindow({closeToTray:w=>void tray.close(w)});win.show();win.focus();return state();
@@ -56,7 +60,7 @@ async function command(request){
   case 'bridgeRestart':{check(pending?.status==='rejected','Old write must have settled');const result=await bridge.call('permission');track(bridge.child);const old=[...children].find(c=>c.pid===pending.child_pid);old?.stdout.resume();await wait(50);return{permission:result,pid:bridge.child?.pid,late_old_stdout_resumed:true,state:state()};}
   case 'bridgeOwnWindow':{check(bridge,'Bridge required');const result=await bridge.call('insertCurrent',{insertion_id:'remaining-own-'+(++seq),text:'MUST NOT PASTE'});return{result,state:state()};}
   case 'bridgeDone':{await stopBridge();const result=state();pending=null;return result;}
-  case 'quit':{await stopBridge();tray.dispose();api.markAppQuitting();stopping=true;setImmediate(()=>app.quit());return state();}
+  case 'quit':{await sessions?.close();await stopBridge();tray.dispose();api.markAppQuitting();stopping=true;setImmediate(()=>app.quit());return state();}
   default:throw Error('Unknown owned integration action');
  }
 }
