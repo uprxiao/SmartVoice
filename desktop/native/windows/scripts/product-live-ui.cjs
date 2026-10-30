@@ -72,6 +72,15 @@ async function caseRun(id,body){
       row.failure_ui=JSON.parse(JSON.stringify(snapshot).replaceAll(credentials.password,'[redacted]').replace(/eyJ[A-Za-z0-9_.-]+/g,'[redacted-token]'));
     }catch{row.failure_snapshot_unavailable=true;}
   }
+  try{
+    const safe=await evaluate(`(()=>{const text=document.body.innerText;return !text.includes(${JSON.stringify(credentials.password)})&&!/eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+/.test(text)&&![...document.querySelectorAll('input')].some(e=>e.type!=='password'&&e.getClientRects().length&&e.value.includes(${JSON.stringify(credentials.password)}));})()`);
+    check(safe,'Screenshot privacy precondition failed');
+    const folder=path.resolve(path.dirname(output),'screenshots');check(folder===path.join(path.resolve(fixture.run_dir),'screenshots'),'Screenshot outside owned fixture');fs.mkdirSync(folder,{recursive:true});
+    const data=await cdp('Page.captureScreenshot',{format:'png',fromSurface:true,captureBeyondViewport:false});
+    const bytes=Buffer.from(data.data,'base64');check(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),'Screenshot is not PNG');
+    const file=row.id+'.png';fs.writeFileSync(path.join(folder,file),bytes,{flag:'wx'});
+    row.screenshot={status:'captured',file:'screenshots/'+file,scope:'owned fictional client page only; supporting image, assertions decide pass'};
+  }catch{row.screenshot={status:'unavailable',scope:'no screenshot pass inferred; test assertion outcome retained'};}
   row.ended_at=new Date().toISOString();
 }
 async function closeSettings(){if(await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`))await click('[aria-label="关闭设置"]');}

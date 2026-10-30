@@ -235,6 +235,7 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/renderer-crash-preparation.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-crash-recovery.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-controls-restart.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/screenshots/*.png
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-ui.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed-failure.json

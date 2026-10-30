@@ -522,7 +522,7 @@ impl Product {
                 std::thread::sleep(Duration::from_millis(75));
             };
             let mut response = if matched {
-                json!({"status":"inserted","effect":"written","observable":true})
+                json!({"status":"inserted","effect":"written","observable":true,"message":"已输入"})
             } else {
                 unverified()
             };

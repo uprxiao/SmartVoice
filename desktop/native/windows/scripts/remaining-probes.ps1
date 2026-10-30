@@ -18,7 +18,7 @@ $planned=switch($Suite){
  'clipboard'{@('R14-snapshot-publication-race','R14-partial-write-restore','R14-partial-and-restore-failure')}
  'ui'{@('R22-first-close-persist','R22-restart-close','R22-write-failure','R23-renderer-crash-reopen')}
  'boundaries'{@('R03-exact-hwnd-reuse','R06-process-query-denied','R06-no-foreground','R06-inaccessible-input-desktop','R04-natural-cold-chrome')}
- 'sessions'{foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){"R08-$stage-$boundary"}};'R09-journal-real-io-failure';'R08-modifier-wait-cancel'}
+ 'sessions'{foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){"R08-$stage-$boundary"}};'R09-journal-real-io-failure';'R08-modifier-wait-cancel';'R01-session-success-zh-CN';'R01-session-success-en'}
  default{@('R03-released-target','R06-disabled-after-capture','R09-capacity-10000','R09-bridge-crash','R09-bridge-timeout','R08-bridge-invalidate','R06-bridge-own-window','R10-invalid-fields','R10-actions','R10-max-utf16','R04-notepad-truncated-uia','R01-chrome-textarea-lf','R01-chrome-textarea-crlf','R22-first-close-persist','R22-restart-close','R22-write-failure','R23-window-concurrency','R23-window-rebuild','R32-production-hud-15')}
 }
 foreach($id in $planned){$script:results[$id]=@{id=$id;status='not_run';reason='not attempted'}}
@@ -192,6 +192,16 @@ try{
   }
  }elseif($Suite -eq 'sessions'){
   $null=Open-Host 'normal' (Join-Path $OutputDir 'session-profile')
+  foreach($locale in @('zh-CN','en')){
+   Case "R01-session-success-$locale" {
+    $field=Focus-Field;$null=Native 'probeSeedClipboard';$prepared=Host-Rpc 'sessionPrepare' @{stage='success';boundary='cancel';locale=$locale};$null=Host-Rpc 'sessionBegin'
+    $end=[DateTime]::UtcNow.AddSeconds(6)
+    do{$settled=Host-Rpc 'sessionState';if($settled.pending.status -ne 'pending'){break};Start-Sleep -Milliseconds 30}while([DateTime]::UtcNow -lt $end)
+    $actual=Field 'fieldState';$clip=Native 'probeClipboardState';$done=Host-Rpc 'sessionDispose';$expectedMessage=if($locale -eq 'en'){'Inserted'}else{'已输入'}
+    Check ($settled.pending.status -eq 'resolved' -and $settled.pending.value.status -eq 'inserted' -and $settled.pending.value.observable -and $settled.pending.value.message -ceq $expectedMessage -and $actual.value -ceq 'BEGIN 中文🙂 END' -and $actual.start -eq 10 -and $actual.end -eq 10 -and $actual.chords.Count -eq 1 -and $actual.enterCount -eq 0 -and $clip.text -ceq 'SVI original clipboard' -and $done.exit_confirmed) 'Actual production session success status/message or independent target differs'
+    return @{locale=$locale;prepared=$prepared;settled=$settled;actual=$actual;cleanup=$done;scope='real session/WS/bridge/helper with fictional PCM/result; success message and full target independently checked'}
+   }
+  }
   foreach($stage in @('prepare','claim','journal','helper','late')){foreach($boundary in @('cancel','account','suspend')){
    Case "R08-$stage-$boundary" {
     $field=Focus-Field;$null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'

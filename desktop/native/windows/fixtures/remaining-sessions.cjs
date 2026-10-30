@@ -65,9 +65,9 @@ module.exports=async function(api,root,folder,track){
   async command(request){
    switch(request.action){
     case 'sessionPrepare':{
-     await dispose();check(['prepare','claim','journal','helper','late','modifier','journal-io'].includes(request.stage)&&['cancel','account','suspend'].includes(request.boundary),'Unknown frozen session parameter');
+     await dispose();check(['prepare','claim','journal','helper','late','modifier','journal-io','success'].includes(request.stage)&&['cancel','account','suspend'].includes(request.boundary)&&(!request.locale||['zh-CN','en'].includes(request.locale)),'Unknown frozen session parameter');
      const user=crypto.randomUUID(),sessionId=crypto.randomUUID(),directory=path.join(folder,'journal-'+crypto.randomUUID());fs.mkdirSync(directory);
-     const s={stage:request.stage,boundary:request.boundary,user,sessionId,snapshot:{user:{id:user},settings:{learning_enabled:true,locale:'zh-CN'}},gate:deferred(),signal:null,applied:false,pending:null,claims:[],writes:[],receipts:[],children:[],sockets:new Set(),gateUsed:false};current=s;
+     const s={stage:request.stage,boundary:request.boundary,user,sessionId,snapshot:{user:{id:user},settings:{learning_enabled:true,locale:request.locale||'zh-CN'}},gate:deferred(),signal:null,applied:false,pending:null,claims:[],writes:[],receipts:[],children:[],sockets:new Set(),gateUsed:false};current=s;
      s.result={result_id:crypto.randomUUID(),attempt_no:1,attempt_kind:'initial',raw_text:'中文🙂',refined_text:'中文🙂',review_required:false,review_reason:null,text_hash:crypto.createHash('sha256').update('中文🙂').digest('hex'),dictionary_version:0,stop_to_result_ms:1,created_at:new Date().toISOString()};
      const session=()=>({session_id:s.sessionId,mode:'dictation',state:'created',learning_enabled:false,current_attempt_no:1,current_result_id:null,audio_complete:false,received_samples:0,audio_ms:0,created_at:new Date().toISOString(),first_terminal_at:null,content_expires_at:null,content_expired:false,error_code:null,result:null,retry_kind:'none',retry_expires_at:null,retry_unavailable_reason:null,insertion_status:null});
      s.native=new api.NativeVoiceInput();const originalCall=s.native.call.bind(s.native);
