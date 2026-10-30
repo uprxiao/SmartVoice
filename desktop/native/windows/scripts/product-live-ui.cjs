@@ -7,15 +7,19 @@ const WebSocket=require('ws');
 const {spawn}=require('node:child_process');
 const {createInterface}=require('node:readline');
 const [port,environmentFile,output,phase]=process.argv.slice(2);
-if(process.env.GITHUB_ACTIONS!=='true'||!/^\d{1,5}$/.test(port||'')||!['register','boot','logout','admin','history','admin-history'].includes(phase))throw Error('Owned CI phase required');
+if(process.env.GITHUB_ACTIONS!=='true'||!/^\d{1,5}$/.test(port||'')||!['register','boot','logout','admin','history','admin-history','controls','crash','crash-recover','controls-restart'].includes(phase))throw Error('Owned CI phase required');
 const root=path.resolve(__dirname,'../../../..');
 const fixture=JSON.parse(fs.readFileSync(environmentFile,'utf8'));
 if(fixture.schema!=='svi-desktop-live-environment-v1'||path.resolve(fixture.source_root)!==root||path.resolve(fixture.run_dir)!==path.dirname(path.resolve(environmentFile))||fixture.origin!=='http://127.0.0.1:17863'||path.resolve(fixture.private_file)!==path.join(path.resolve(fixture.run_dir),'credentials.private.json'))throw Error('Owned fixture mismatch');
 const credentials=JSON.parse(fs.readFileSync(fixture.private_file,'utf8'));
 const email='desktop-live@example.test';
 const planned=phase==='register'?['LIVE-DESKTOP-01','LIVE-DESKTOP-02','LIVE-DESKTOP-03','LIVE-DESKTOP-04','LIVE-DESKTOP-05']:phase==='boot'?['LIVE-DESKTOP-06']:phase==='logout'?['LIVE-DESKTOP-07']:phase==='history'?['LIVE-HISTORY-01','LIVE-HISTORY-02','LIVE-HISTORY-03','LIVE-HISTORY-04']:phase==='admin-history'?['LIVE-ADMIN-HISTORY-01']:['LIVE-ADMIN-01','LIVE-ADMIN-02','LIVE-ADMIN-03'];
+if(phase==='controls')planned.splice(0,planned.length,'LIVE-CONTROL-01','LIVE-CONTROL-02');
+if(phase==='crash')planned.splice(0,planned.length);
+if(phase==='crash-recover')planned.splice(0,planned.length,'LIVE-CONTROL-03');
+if(phase==='controls-restart')planned.splice(0,planned.length,'LIVE-CONTROL-04');
 const report={phase,scope:'actual Main/preload + loopback HTTP/PostgreSQL; real DOM input, mock providers, no product audio/model/S5 pass',planned:planned.length,cases:planned.map(id=>({id,status:'not_run'}))};
-let socket,sequence=0,native,nativeExit,nativeSequence=0;const pending=new Map(),nativePending=new Map();const loginResponses=[];
+let socket,sequence=0,native,nativeExit,nativeSequence=0,actualCrashEvent=false;const pending=new Map(),nativePending=new Map();const loginResponses=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const check=(ok,message)=>{if(!ok)throw Error(message);};
 async function cdp(method,params={}){
@@ -71,6 +75,35 @@ async function caseRun(id,body){
   row.ended_at=new Date().toISOString();
 }
 async function closeSettings(){if(await evaluate(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`))await click('[aria-label="关闭设置"]');}
+async function shortcutSettings(){
+ await closeSettings();await click('button[title="设置"]');await button('设置');
+ await until(`document.querySelectorAll('button.settings-control').length===1`);
+}
+async function shortcutKey(key,code,virtualKey,modifiers){
+ await click('button.settings-control');
+ await until(`document.querySelector('button.settings-control')?.innerText.includes('请按下快捷键')`);
+ await cdp('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:virtualKey,modifiers});
+ await cdp('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:virtualKey,modifiers:0});
+ await until(`!document.querySelector('button.settings-control')?.disabled&&!document.querySelector('button.settings-control')?.innerText.includes('请按下快捷键')`);
+}
+async function shortcutOwner(key,body){
+ const folder=path.join(fixture.run_dir,'shortcut-controls',String(++sequence));fs.mkdirSync(folder,{recursive:true});
+ const executable=path.join(root,'desktop/node_modules/electron/dist/electron.exe');
+ const child=spawn(executable,[path.join(root,'desktop/native/windows/fixtures/shortcut-owner.cjs'),folder,key],{windowsHide:true,env:{...process.env,SVI_SHORTCUT_CONTROL_ROOT:path.dirname(folder)},stdio:'ignore'});
+ let exited=false;const stopped=new Promise(resolve=>child.once('exit',(code,signal)=>{exited=true;resolve({code,signal});}));
+ try{
+  const readyFile=path.join(folder,'ready.json'),end=Date.now()+10000;
+  while(!fs.existsSync(readyFile)){check(!exited&&Date.now()<end,'BLOCKED: native shortcut owner not ready');await pause(30);}
+  const facts=JSON.parse(fs.readFileSync(readyFile,'utf8'));check(facts.pid===child.pid&&facts.key===key,'Wrong owned shortcut process');
+  return await body(facts);
+ }finally{
+  fs.writeFileSync(path.join(folder,'stop.json'),'{}',{flag:'wx'});
+  const result=await Promise.race([stopped,pause(3000).then(()=>null)]);
+  if(!result){child.kill();await stopped;throw Error('Owned shortcut helper required forced cleanup');}
+  check(result.code===0,'Owned shortcut helper did not quit normally');
+ }
+}
+function localShortcutFile(){const file=path.join(fixture.run_dir,'desktop-profile/settings.json');return fs.existsSync(file)?fs.readFileSync(file,'utf8'):null;}
 async function startOwnedProbe(){
   const targets=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'history-targets.json'),'utf8'));
   check(process.platform==='win32'&&targets.schema==='svi-history-targets-v1'&&targets.notepad_image_verified===true&&targets.controller_owns_process_objects===true&&Number.isInteger(targets.main_pid)&&Number.isInteger(targets.notepad_pid)&&targets.main_pid>0&&targets.notepad_pid>0&&targets.main_pid!==targets.notepad_pid,'Explicit owned OS targets required');
@@ -131,14 +164,65 @@ async function privacy(){
   }
   check(page,'Owned exact renderer unavailable');
   socket=new WebSocket(page.webSocketDebuggerUrl);
-  socket.on('message',bytes=>{const data=JSON.parse(bytes.toString());if(data.method==='Network.responseReceived'&&new URL(data.params.response.url).pathname==='/api/auth/login')loginResponses.push(data.params.response.status);const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(Error(data.error.message)):request.resolve(data.result);});
+  socket.on('message',bytes=>{const data=JSON.parse(bytes.toString());if(data.method==='Inspector.targetCrashed')actualCrashEvent=true;if(data.method==='Network.responseReceived'&&new URL(data.params.response.url).pathname==='/api/auth/login')loginResponses.push(data.params.response.status);const request=pending.get(data.id);if(!request)return;clearTimeout(request.timer);pending.delete(data.id);data.error?request.reject(Error(data.error.message)):request.resolve(data.result);});
   await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);});
   let info;
   if(!adminPhase){
     info=await evaluate(`window.electronAPI.invoke('app.info')`); // Read-only Main API precondition before credentials.
     check(info.platform==='win32'&&info.apiBaseUrl===fixture.origin,'Refusing credentials outside the owned loopback Main service');
   }
-  if(phase==='register'){
+  if(phase==='controls'){
+    await until(`Boolean(document.querySelector('nav'))&&document.body.innerText.includes(${JSON.stringify(email)})`);
+    await shortcutSettings();
+    await caseRun('LIVE-CONTROL-01',async()=>{
+      const original=info.shortcut,file=localShortcutFile(),observations=[];
+      for(const [key,code,vk,modifiers] of [[' ','Space',32,8],[' ','Space',32,2],['Escape','Escape',27,0]]){
+        await shortcutKey(key,code,vk,modifiers);
+        const current=await evaluate(`window.electronAPI.invoke('app.info')`);
+        check(current.shortcut===original&&localShortcutFile()===file,'Reserved key or Escape changed saved shortcut');
+        observations.push({key,modifiers,actual:current.shortcut,ui:await evaluate(`document.querySelector('button.settings-control').innerText`)});
+      }
+      return{original,observations,scope:'real DOM key input and actual Main native policy; not physical IME verification'};
+    });
+    await caseRun('LIVE-CONTROL-02',async()=>{
+      const before=await evaluate(`window.electronAPI.invoke('app.info')`),file=localShortcutFile();
+      const conflict=await shortcutOwner('Control+Alt+F10',async facts=>{
+        check(facts.registered,'BLOCKED: independent F10 registration unavailable');await shortcutKey('F10','F10',121,3);
+        const current=await evaluate(`window.electronAPI.invoke('app.info')`);
+        check(current.shortcut===before.shortcut&&localShortcutFile()===file,'Real native registration conflict replaced original shortcut');
+        await until(`document.body.innerText.includes('不可用')`);return{owner:facts,actual:current.shortcut};
+      });
+      await shortcutOwner('Control+Alt+F9',async facts=>{check(facts.registered,'BLOCKED: candidate F9 not initially free');});
+      await shortcutKey('F9','F9',120,3);
+      const current=await evaluate(`window.electronAPI.invoke('app.info')`),saved=JSON.parse(localShortcutFile());
+      check(current.shortcut==='Control+Alt+F9'&&saved.shortcut===current.shortcut,'Successful shortcut not saved/read back');
+      const actualOwner=await shortcutOwner('Control+Alt+F9',async facts=>{check(!facts.registered,'Product did not hold the native global registration');return facts;});
+      await closeSettings();return{conflict,actual:current.shortcut,saved,independent_native_occupied:actualOwner};
+    });
+  }else if(phase==='crash'){
+    await cdp('Inspector.enable');
+    const attempted=cdp('Page.crash').catch(error=>({transport_error:error.message}));
+    const end=Date.now()+14000;while(!actualCrashEvent&&Date.now()<end)await pause(30);
+    const transport=await attempted;check(actualCrashEvent,'Actual renderer crash event unavailable');
+    report.preparation={actual_crash_event:true,old_target_id:page.id,transport,scope:'actual owned Renderer crash control; recovery evaluated separately'};
+  }else if(phase==='crash-recover'||phase==='controls-restart'){
+    await caseRun(phase==='crash-recover'?'LIVE-CONTROL-03':'LIVE-CONTROL-04',async()=>{
+      await until(`Boolean(document.querySelector('nav'))&&document.body.innerText.includes(${JSON.stringify(email)})`);
+      check(info.shortcut==='Control+Alt+F9','Shortcut or account lost on actual recovery/restart');
+      if(phase==='crash-recover'){
+        const previous=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'renderer-crash-preparation.json'),'utf8'));
+        check(previous.preparation?.actual_crash_event&&previous.preparation.old_target_id!==page.id,'Crashed renderer was reused');
+        if(info.microphone.status==='denied'){
+          await click('[aria-label="开始录音"]');await until(`document.body.innerText.includes('麦克风')&&(document.body.innerText.includes('隐私')||document.body.innerText.includes('权限'))`);
+          check(await evaluate(`!document.querySelector('[aria-label="停止录音"]')`),'New renderer sender entered unexpected recording');
+        }
+      }else{
+        await shortcutSettings();check(await evaluate(`document.querySelector('button.settings-control').innerText.includes('F9')`),'Restart UI did not show persisted shortcut');await closeSettings();
+      }
+      const owner=await shortcutOwner('Control+Alt+F9',async facts=>{check(!facts.registered,'Restart did not hold saved native key');return facts;});
+      return{actual_target_id:page.id,account_restored:true,shortcut:info.shortcut,native_owner:owner,storage:await privacy(),scope:'actual Main/preload/UI and native global registration; denied microphone only'};
+    });
+  }else if(phase==='register'){
     await caseRun('LIVE-DESKTOP-01',async()=>{await until(`Boolean(document.querySelector('input[type=email]'))`);check(info.nativeInputSupported&&!info.accessibilitySupported&&!info.correctionObservationSupported,'Windows capability boundary differs');return{platform:info.platform,microphone:info.microphone,api_origin:info.apiBaseUrl,storage:await privacy()};});
     await caseRun('LIVE-DESKTOP-02',async()=>{await fill('input[type=email]',email);await fill('input[type=password]',credentials.password+'wrong');await click('form button[type=submit]');await until(`document.body.innerText.includes('邮箱或密码错误')`);check(await evaluate(`!document.querySelector('nav')`),'Invalid credentials authenticated');return{rejected:true};});
     await caseRun('LIVE-DESKTOP-03',async()=>{await button('注册');await fill('input[type=email]',email);await fill('input[autocomplete="new-password"][placeholder="至少 8 个字符"]',credentials.password);await fill('input[placeholder="再次输入密码"]',credentials.password);await click('form button[type=submit]');await until(`Boolean(document.querySelector('nav'))&&document.body.innerText.includes(${JSON.stringify(email)})`);return{email,automatic_login:true,storage:await privacy()};});

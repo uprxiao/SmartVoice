@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 const f=vi.hoisted(()=>({windows:[] as any[],load:vi.fn()}));
 vi.mock('electron',()=>({app:{isPackaged:false},screen:{},BrowserWindow:class extends EventEmitter {
-  destroyed=false;show=vi.fn();hide=vi.fn();webContents=new EventEmitter();
+  destroyed=false;crashed=false;show=vi.fn();hide=vi.fn();webContents=Object.assign(new EventEmitter(),{isCrashed:()=>this.crashed});
   constructor(readonly options:unknown){super();f.windows.push(this);}
   isDestroyed(){return this.destroyed;}
   destroy(){this.destroyed=true;this.emit('closed');}
@@ -24,6 +24,14 @@ describe('single main window including hidden audio renderer',()=>{
   it('recreates an unexpectedly destroyed main window even when other windows exist',async()=>{
     const api=await import('./window');const a=await api.createMainWindow();f.windows[0].destroy();
     const b=await api.createMainWindow();expect(a).not.toBe(b);expect(f.windows).toHaveLength(2);expect(api.getMainWindow()).toBe(b);
+  });
+  it('replaces a crashed Windows renderer once across concurrent reopen requests',async()=>{
+    const api=await import('./window');const old=await api.createMainWindow();const closed=vi.fn();old.on('closed',closed);
+    f.windows[0].crashed=true;
+    const reopened=await Promise.all(Array.from({length:6},()=>api.createMainWindow()));
+    expect(closed).toHaveBeenCalledOnce();expect(old.isDestroyed()).toBe(true);
+    expect(new Set(reopened).size).toBe(1);expect(reopened[0]).not.toBe(old);expect(f.windows).toHaveLength(2);
+    expect(api.getMainWindow()).toBe(reopened[0]);
   });
   it('preserves Mac close-to-hide and allows a real quit to close',async()=>{
     Object.defineProperty(process,'platform',{...platform,value:'darwin'});

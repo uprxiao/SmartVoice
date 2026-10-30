@@ -4,6 +4,10 @@ name: Windows technical probes
 # This file need not be merged to main just to dispatch the verification branch.
 on:
   workflow_call:
+    inputs:
+      expanded_ui:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -187,7 +191,9 @@ jobs:
         id: live-ui
         if: ${{ !cancelled() && steps.live-runtime.outcome == 'success' }}
         shell: pwsh
-        run: ./desktop/native/windows/scripts/product-live-service.ps1 -PythonExe $env:SVI_LIVE_PYTHON -EvidenceDir "$env:SVI_PROBE_EVIDENCE/live-desktop" -HistoryInsert
+        env:
+          SVI_EXPANDED_UI: ${{ inputs.expanded_ui }}
+        run: ./desktop/native/windows/scripts/product-live-service.ps1 -PythonExe $env:SVI_LIVE_PYTHON -EvidenceDir "$env:SVI_PROBE_EVIDENCE/live-desktop" -HistoryInsert -ExpandedUI:($env:SVI_EXPANDED_UI -eq 'true')
       - name: Preserve the development installer
         if: ${{ success() && steps.probes.outcome == 'success' && steps.product-smoke.outcome == 'success' && steps.product-install.outcome == 'success' && steps.live-ui.outcome == 'success' }}
         uses: actions/upload-artifact@v4
@@ -225,6 +231,10 @@ jobs:
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-register.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-resume.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-logout.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-controls.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/renderer-crash-preparation.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-crash-recovery.json
+            ${{ runner.temp }}/svi-windows-evidence/live-desktop/desktop-controls-restart.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/admin-ui.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed.json
             ${{ runner.temp }}/svi-windows-evidence/live-desktop/history-seed-failure.json

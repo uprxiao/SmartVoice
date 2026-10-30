@@ -9,6 +9,8 @@
 const params = new URLSearchParams(location.search);
 const kind = params.get('kind');
 const field = document.createElement(kind === 'textarea' ? 'textarea' : 'input');
+window.sviEvents={pastes:[],enters:0};
+field.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key.toLowerCase()==='v')window.sviEvents.pastes.push({ctrl:event.ctrlKey,shift:event.shiftKey,alt:event.altKey,meta:event.metaKey});if(event.key==='Enter')window.sviEvents.enters++;});
 const empty = params.get('empty') === '1';
 field.value = empty ? '' : 'BEGIN React END';
 field.setAttribute('aria-label', 'SVI fictional probe field');

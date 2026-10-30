@@ -91,7 +91,10 @@ export function hideHud(): void {
 export function createMainWindow(options: MainWindowOptions = {}): Promise<BrowserWindow> {
   if (mainCreation) return mainCreation;
   const existing = getMainWindow();
-  if (existing) return Promise.resolve(existing);
+  if (existing) {
+    if (process.platform === 'win32' && existing.webContents.isCrashed()) existing.destroy();
+    else return Promise.resolve(existing);
+  }
   mainCreation = loadMainWindow(options).finally(() => { mainCreation = null; });
   return mainCreation;
 }

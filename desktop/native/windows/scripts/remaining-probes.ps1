@@ -205,7 +205,9 @@ try{
    return @{original=$original;target=$target;preparation=$prepared;fresh=$fresh;validation=$validation;result=$result;actual=$actual;clipboard_unchanged=$true}
   }
   Case 'R06-process-query-denied' {
+   $null=File-Rpc $reuseFolder @{action='reset'}
    Check ((Native 'probeFocus' @{fixture_pid=$reuseProcess.Id}).focused) 'Owned native root unavailable';$null=File-Rpc $reuseFolder @{action='focus'}
+   $baseline=Native 'capture' @{fixture_pid=$reuseProcess.Id};Check ($baseline.readback.text -ceq 'BEGIN React END' -and $baseline.readback.caret_utf16 -eq 6 -and $baseline.readback.selection_utf16_len -eq 5) 'BLOCKED: independent lifecycle-query fixture baseline unavailable'
    $null=Native 'probeSeedClipboard';$before=Native 'probeClipboardState'
    try{
     [RemainingBoundaryControl]::DenyOwnedProcessQuery([uint32]$reuseProcess.Id)
@@ -247,16 +249,24 @@ try{
      $initial=Native 'probeReadNow' @{fixture_pid=$chrome.Id};$null=Native 'probeSeedClipboard'
      $result=Product 'insertCurrent' @{insertion_id="natural-cold-$iteration";text='中文🙂'}
      $final=Native 'capture' @{fixture_pid=$chrome.Id};$clip=Native 'probeClipboardState'
+     $domPath=Join-Path $OutputDir "natural-cold-$iteration-after.json"
+     & node (Join-Path $PSScriptRoot 'chrome-ready.cjs') $port $page 5000 $domPath readback
+     Check ($LASTEXITCODE -eq 0) 'Independent cold Chrome DOM readback unavailable'
+     $dom=(Get-Content -Raw $domPath|ConvertFrom-Json).actual
      $readProperty=$initial.PSObject.Properties['readback'];$readOk=if($null -ne $readProperty){$readProperty.Value.PSObject.Properties['Ok']}else{$null}
      $initiallyUnreadable=($null -eq $readOk -or $null -eq $readOk.Value.caret_utf16)
-     $samples+=@{iteration=$iteration;initial=$initial;result=$result;final=$final;initially_unreadable=$initiallyUnreadable}
-     Check ($result.status -eq 'inserted' -and $result.observable -and $result.effect -eq 'written' -and $final.readback.text -ceq 'BEGIN 中文🙂 END' -and $final.readback.caret_utf16 -eq 10 -and $final.readback.selection_utf16_len -eq 0 -and $clip.text -ceq 'SVI original clipboard') 'Cold formal helper did not strictly verify the actual result'
+     $samples+=@{iteration=$iteration;initial=$initial;result=$result;final=$final;dom=$dom;initially_unreadable=$initiallyUnreadable}
+     Write-NewJson $samples[-1] (Join-Path $OutputDir "natural-cold-$iteration-observation.json")
+     Check ($dom.events.pastes.Count -le 1 -and $dom.events.enters -eq 0 -and $clip.text -ceq 'SVI original clipboard') 'Cold target received repeated input/Enter or clipboard was not restored'
+     if($result.status -eq 'inserted'){
+      Check ($result.observable -and $result.effect -eq 'written' -and $final.readback.text -ceq 'BEGIN 中文🙂 END' -and $final.readback.caret_utf16 -eq 10 -and $final.readback.selection_utf16_len -eq 0 -and $dom.value -ceq 'BEGIN 中文🙂 END' -and $dom.start -eq 10 -and $dom.end -eq 10 -and $dom.events.pastes.Count -eq 1) 'Cold target claimed inserted without exact independent full-text/caret/selection'
+     }else{Check ($result.status -eq 'unverified' -and -not $result.observable -and $result.effect -eq 'unknown') 'Cold missing-pattern result falsely claimed a definitive outcome'}
      if($initiallyUnreadable){$acquired=$true;break}
     }finally{Stop-Owned $chrome}
    }
    Write-NewJson @{samples=$samples;natural_initial_unreadable_acquired=$acquired} (Join-Path $OutputDir 'natural-cold-observations.json')
    Check $acquired 'BLOCKED: all3 natural initial reads were already readable; missing-pattern transition not observed, no fake return substituted'
-   return @{samples=$samples;scope='natural fresh Chrome, only DOM readiness before one raw first UIA query; actual formal450ms warmup and strict result'}
+   return @{samples=$samples;scope='natural fresh Chrome, only DOM readiness before one raw first UIA query; original TC04 allows unknown on missing evidence and inserted only for strict match, no normalization/replay'}
   }
  }else{
  Case 'R10-invalid-fields' {

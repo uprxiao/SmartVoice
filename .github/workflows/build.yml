@@ -20,6 +20,10 @@ on:
         type: choice
         options: [standard, clipboard, ui, boundaries]
         default: standard
+      expanded_ui:
+        description: Add actual Main shortcut persistence and renderer crash recovery checks
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       full_matrix:
@@ -34,6 +38,9 @@ on:
       remaining_suite:
         type: string
         default: standard
+      expanded_ui:
+        type: boolean
+        default: false
       require_mac_signing:
         type: boolean
         default: false
@@ -60,6 +67,8 @@ jobs:
   windows-probes:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only && !inputs.remaining_only
     uses: ./.github/workflows/windows-verify.yml
+    with:
+      expanded_ui: ${{ inputs.expanded_ui }}
 
   windows-credentials:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.credential_controls_only && !inputs.remaining_only

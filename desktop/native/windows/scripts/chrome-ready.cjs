@@ -2,10 +2,10 @@
 const fs=require('node:fs'),path=require('node:path');
 const {fileURLToPath}=require('node:url');
 const WebSocket=require('ws');
-const [rawPort,expectedUrl,rawBudget,output]=process.argv.slice(2);
+const [rawPort,expectedUrl,rawBudget,output,mode='ready']=process.argv.slice(2);
 const port=Number(rawPort),budget=Number(rawBudget),url=new URL(expectedUrl);
 const kind=url.searchParams.get('kind');
-if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!Number.isInteger(port)||port<1||port>65535||!Number.isInteger(budget)||budget<1||budget>45000||url.protocol!=='file:'||path.resolve(fileURLToPath(url))!==path.resolve(__dirname,'../fixtures/chrome.html')||!['input','textarea'].includes(kind))throw Error('Owned Chrome fixture required');
+if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||!['ready','readback'].includes(mode)||!Number.isInteger(port)||port<1||port>65535||!Number.isInteger(budget)||budget<1||budget>45000||url.protocol!=='file:'||path.resolve(fileURLToPath(url))!==path.resolve(__dirname,'../fixtures/chrome.html')||!['input','textarea'].includes(kind))throw Error('Owned Chrome fixture required');
 const started=performance.now(),end=started+budget;
 const report={scope:'owned file DOM readiness only; no UIA warmup, paste or product pass',status:'not_run',kind,budget_ms:budget};
 let socket,sequence=0;const pending=new Map();
@@ -22,6 +22,11 @@ async function cdp(method,params={}){return new Promise((resolve,reject)=>{const
  socket.on('message',bytes=>{const value=JSON.parse(bytes.toString()),request=pending.get(value.id);if(!request)return;clearTimeout(request.timer);pending.delete(value.id);value.error?request.reject(Error(value.error.message)):request.resolve(value.result);});
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture socket not ready')),Math.max(1,Math.min(2000,end-performance.now())));socket.once('open',()=>{clearTimeout(timer);resolve();});socket.once('error',error=>{clearTimeout(timer);reject(error);});});
  await cdp('Page.bringToFront');
+ if(mode==='readback'){
+  const actual=await cdp('Runtime.evaluate',{expression:`(()=>{const field=document.querySelector('input,textarea');return {value:field.value,start:field.selectionStart,end:field.selectionEnd,events:window.sviEvents};})()`,returnByValue:true});
+  if(actual.exceptionDetails)throw Error('Owned Chrome DOM readback failed');
+  report.actual=actual.result.value;report.status='observed';return;
+ }
  while(performance.now()<end){
   const result=await cdp('Runtime.evaluate',{expression:`({ready:document.readyState,active:document.activeElement?.tagName?.toLowerCase(),label:document.activeElement?.getAttribute('aria-label'),value:document.activeElement?.value,has_focus:document.hasFocus()})`,returnByValue:true});
   if(result.exceptionDetails)throw Error('Fixture readiness evaluation failed');

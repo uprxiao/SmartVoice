@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$PythonExe,[Parameter(Mandatory=$true)][string]$EvidenceDir,[switch]$Worker,[switch]$HistoryInsert)
+param([Parameter(Mandatory=$true)][string]$PythonExe,[Parameter(Mandatory=$true)][string]$EvidenceDir,[switch]$Worker,[switch]$HistoryInsert,[switch]$ExpandedUI)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'probe-files.ps1')
@@ -7,6 +7,7 @@ $verify=Join-Path $env:CARGO_TARGET_DIR 'release/verify.exe'
 if(-not $Worker){
     $workerArgs=@('-NoProfile','-File',$PSCommandPath,'-Worker','-PythonExe',$PythonExe,'-EvidenceDir',$EvidenceDir)
     if($HistoryInsert){$workerArgs+='-HistoryInsert'}
+    if($ExpandedUI){$workerArgs+='-ExpandedUI'}
     & $verify --medium (Get-Command pwsh).Source @workerArgs
     if($LASTEXITCODE -ne 0){throw 'Actual Main/HTTP/PostgreSQL UI integration failed'}
     exit 0
@@ -132,10 +133,10 @@ function Crypto-Control {
 try {
     Assert-Live (-not (Test-Path $EvidenceDir)) 'New integration directory required'
     $sources=@{}
-    foreach($file in @('server/tests/desktop_live_environment.py','server/tests/desktop_history_fixture.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/native/windows/credential-bootstrap.ts','desktop/src/main/core/auth-service.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','desktop/src/renderer/views/HistoryView.tsx','desktop/src/renderer/stores/session-store.ts','server/app/models/session.py','server/app/services/session_runtime.py','server/app/providers/asr/mock.py','server/app/providers/llm/mock.py','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs')){
+    foreach($file in @('server/tests/desktop_live_environment.py','server/tests/desktop_history_fixture.py','server/app/api/auth.py','server/app/models/user.py','desktop/src/main/core/api-client.ts','desktop/src/main/core/token-store.ts','desktop/native/windows/credential-bootstrap.ts','desktop/src/main/core/auth-service.ts','desktop/src/main/core/session-service.ts','desktop/src/main/core/insertion-journal.ts','desktop/src/main/rpc.ts','desktop/native/system-settings.ts','desktop/src/renderer/views/AuthView.tsx','desktop/src/renderer/views/Shell.tsx','desktop/src/renderer/views/SettingsView.tsx','desktop/src/renderer/views/HomeView.tsx','desktop/src/renderer/views/HistoryView.tsx','desktop/src/renderer/stores/session-store.ts','server/app/models/session.py','server/app/services/session_runtime.py','server/app/providers/asr/mock.py','server/app/providers/llm/mock.py','admin/src/api.ts','desktop/native/windows/scripts/product-live-ui.cjs','desktop/native/windows/scripts/product-live-service.ps1','desktop/native/windows/scripts/fixture-acl.ps1','desktop/native/windows/fixtures/credential-control.cjs','desktop/native/windows/fixtures/shortcut-owner.cjs')){
         $sources[$file]=(Get-FileHash (Join-Path $repo $file) -Algorithm SHA256).Hash
     }
-    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$(if($HistoryInsert){15}else{10});case_groups=@{register=5;resume=2;admin=3;history=$(if($HistoryInsert){5}else{0})};oracle='baseline: one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';history_oracle=$(if($HistoryInsert){'after complete baseline: real HTTP/WS zero PCM/mock result with explicitly prepared review flag; actual UI refine retry, manual OS target capture/insert, duplicate click, logout; 1 session/2 results/1 inserted observable receipt/14 chars/0 learning; real Admin same database'}else{'not planned'});audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
+    Write-NewJson @{source_sha=$env:GITHUB_SHA;frozen_at=[DateTime]::UtcNow.ToString('o');planned=$($(if($HistoryInsert){15}else{10})+$(if($ExpandedUI){4}else{0}));expanded_ui=[bool]$ExpandedUI;case_groups=@{register=5;resume=2;admin=3;history=$(if($HistoryInsert){5}else{0})};oracle='baseline: one bootstrap admin, one real desktop registration, 2 Argon2 accounts with learning preference unchanged, 0 audio sessions, logout leaves0 active logins; encrypted local credentials restore across real Main restart';history_oracle=$(if($HistoryInsert){'after complete baseline: real HTTP/WS zero PCM/mock result with explicitly prepared review flag; actual UI refine retry, manual OS target capture/insert, duplicate click, logout; 1 session/2 results/1 inserted observable receipt/14 chars/0 learning; real Admin same database'}else{'not planned'});audio='actual denied OS state; no force-grant or audio/model pass';source_hashes=$sources} ($EvidenceDir+'.plan.json')
     Assert-Live (Test-Path $env:PGBIN) 'Preinstalled frozen PostgreSQL tools unavailable'
     & $PythonExe $fixture prepare --run-dir $EvidenceDir --pg-bin $env:PGBIN --port 17863
     Assert-Live ($LASTEXITCODE -eq 0) 'Isolated fixture setup failed; private setup evidence retained'
@@ -210,6 +211,21 @@ try {
         while([DateTime]::UtcNow -lt $end -and [SviLiveWindows]::Visible($desktop.Id) -ne 1){Start-Sleep -Milliseconds 100}
         Assert-Live ([SviLiveWindows]::Visible($desktop.Id) -eq 1) 'Second instance did not show the same restored account window'
         $data.saved_account_second_instance=@{exit_code=$second.process.ExitCode;original_visible_count=[SviLiveWindows]::Visible($desktop.Id);original_process_alive=(-not $desktop.HasExited)}
+        if($ExpandedUI){
+            # Only after the immediate first-registration hard-exit control.
+            & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-controls.json') 'controls'
+            Assert-Live ($LASTEXITCODE -eq 0) 'Actual shortcut controls failed'
+            & node $ui $launch.port $environment (Join-Path $EvidenceDir 'renderer-crash-preparation.json') 'crash'
+            Assert-Live ($LASTEXITCODE -eq 0) 'Actual renderer crash condition was not acquired'
+            $second=Start-Desktop
+            Assert-Live ($second.process.WaitForExit(10000) -and $second.process.ExitCode -eq 0) 'Reopen instance did not hand off to owned Main'
+            & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-crash-recovery.json') 'crash-recover'
+            Assert-Live ($LASTEXITCODE -eq 0 -and [SviLiveWindows]::Visible($desktop.Id) -eq 1) 'Actual Main renderer/account recovery failed'
+            Stop-Desktop $desktop;$desktop=$null
+            $launch=Start-Desktop;$desktop=$launch.process
+            & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-controls-restart.json') 'controls-restart'
+            Assert-Live ($LASTEXITCODE -eq 0) 'Actual shortcut persistence after Main restart failed'
+        }
         & node $ui $launch.port $environment (Join-Path $EvidenceDir 'desktop-logout.json') 'logout'
         Assert-Live ($LASTEXITCODE -eq 0) 'Actual restored-account logout UI failed'
     }catch{
@@ -296,6 +312,12 @@ finally {
         if(-not $data.login_cleanup_confirmed){$data.status='fail'}
     }
     if(Test-Path $environment){& $PythonExe $fixture stop-pg --environment $environment;$data.postgres_cleanup_confirmed=($LASTEXITCODE -eq 0);if(-not $data.postgres_cleanup_confirmed){$data.status='fail'}}
+    if($ExpandedUI -and (Test-Path $EvidenceDir)){
+        foreach($entry in @(@{file='desktop-controls.json';ids=@('LIVE-CONTROL-01','LIVE-CONTROL-02')},@{file='desktop-crash-recovery.json';ids=@('LIVE-CONTROL-03')},@{file='desktop-controls-restart.json';ids=@('LIVE-CONTROL-04')})){
+            $file=Join-Path $EvidenceDir $entry.file
+            if(-not(Test-Path $file)){Write-NewJson @{planned=$entry.ids.Count;cases=@($entry.ids|ForEach-Object{@{id=$_;status='blocked';reason='Earlier owned Main/UI preparation failed; no pass inferred'}})} $file}
+        }
+    }
     if(Test-Path $EvidenceDir){Write-NewJson @{scope='metadata only, no ciphertext/key/credential contents';observations=$data.profile_lifecycle} (Join-Path $EvidenceDir 'profile-lifecycle.json');Write-NewJson $data (Join-Path $EvidenceDir 'summary.json')}
     if($data.status -ne 'pass'){throw 'Actual client/service integration failed; all acquired evidence retained'}
 }

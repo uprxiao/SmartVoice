@@ -12,6 +12,7 @@ using System.Windows.Forms;
 public sealed class HandleReuseFixture : Form {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr CreateWindowEx(uint ex,string cls,string text,uint style,int x,int y,int w,int h,IntPtr parent,IntPtr menu,IntPtr instance,IntPtr arg);
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr window);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr window,int index,IntPtr value);
@@ -56,13 +57,14 @@ public sealed class HandleReuseFixture : Form {
     object Reuse(){
         var watch=Stopwatch.StartNew();if(!DestroyWindow(edit))throw new Exception("Original HWND was not destroyed");
         int attempts=0;bool acquired=false;
+        edit=IntPtr.Zero;
         while(attempts<100000&&watch.ElapsedMilliseconds<20000){
+            if(edit!=IntPtr.Zero&&!DestroyWindow(edit))throw new Exception("Intermediate owned HWND was not destroyed");
             attempts++;edit=NewEdit();
             if(edit==firstHandle){acquired=true;break;}
-            if(attempts==100000||watch.ElapsedMilliseconds>=20000)break;
-            if(!DestroyWindow(edit))throw new Exception("Intermediate owned HWND was not destroyed");
             if(attempts%1000==0)Application.DoEvents();
         }
+        if(edit==IntPtr.Zero)edit=NewEdit();
         pastes=0;enters=0;Install();FocusEdit();
         return new {actual_same_hwnd_acquired=acquired,attempts=attempts,elapsed_ms=watch.ElapsedMilliseconds,state=State()};
     }
@@ -75,6 +77,7 @@ public sealed class HandleReuseFixture : Form {
                 case "state":value=State();break;
                 case "focus":FocusEdit();value=State();break;
                 case "reuse":value=Reuse();break;
+                case "reset":if(IsWindow(edit))DestroyWindow(edit);edit=NewEdit();pastes=0;enters=0;Install();FocusEdit();value=State();break;
                 case "quit":value=new {closing=true};BeginInvoke(new Action(Close));break;
                 default:throw new Exception("Unknown owned HWND fixture action");
             }}catch(Exception error){value=new {error=error.Message};}
