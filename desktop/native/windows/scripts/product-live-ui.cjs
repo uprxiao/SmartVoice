@@ -186,7 +186,7 @@ async function privacy(){
   if(phase==='journal-arm'){
     const seeded=JSON.parse(fs.readFileSync(path.join(fixture.run_dir,'journal-seed.json'),'utf8')),targets=await startOwnedProbe();
     await until(`Boolean(document.querySelector('input[type=email]'))`);await fill('input[type=email]',email);await fill('input[type=password]',credentials.password);await click('form button[type=submit]');
-    await until(`Boolean(document.querySelector('nav'))`);await closeSettings();await button('历史记录','nav');await until(`[...document.querySelectorAll('button')].filter(e=>e.textContent.trim()==='重新整理'&&!e.disabled).length===1`);await button('重新整理');
+    await until(`Boolean(document.querySelector('nav'))`);if(info.microphone.status==='denied')await until(`Boolean(document.querySelector('[aria-label="关闭设置"]'))`);await closeSettings();await button('历史记录','nav');await until(`[...document.querySelectorAll('button')].filter(e=>e.textContent.trim()==='重新整理'&&!e.disabled).length===1`);await button('重新整理');
     await until(`document.body.innerText.includes(${JSON.stringify(seeded.refined_text)})&&[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='插入到当前输入框'&&!e.disabled)`);
     await focusMainPage(targets);await button('插入到当前输入框');await until(`[...document.querySelectorAll('button')].some(e=>e.textContent.trim()==='重新指定目标'&&!e.disabled)`);
     await button('重新指定目标');check((await observeOS('probeFocus',{fixture_pid:targets.notepad_pid})).focused,'Owned journal Notepad unavailable');await observeOS('probeSelect',{fixture_pid:targets.notepad_pid,start:6,length:5});
