@@ -18,7 +18,7 @@ on:
       remaining_suite:
         description: Supplementary scope (standard parameters or controlled clipboard failures)
         type: choice
-        options: [standard, clipboard]
+        options: [standard, clipboard, ui, boundaries]
         default: standard
   workflow_call:
     inputs:
