@@ -22,7 +22,7 @@ import { API_BASE_URL } from '@shared/config';
 import { presentation } from '@product/presentation';
 import { stores } from '../stores';
 import { RetentionControl } from '../components/RetentionControl';
-import { errorMessage } from '../lib/error-message';
+import { errorMessage, shortcutErrorMessage } from '../lib/error-message';
 import { rpc } from '../lib/ipc';
 import { watchAppInfo } from '../lib/app-info-refresh';
 import { applyTheme, getThemePref, type ThemePref } from '../lib/theme';
@@ -284,7 +284,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
       const applied = await ui.updateShortcut(next);
       ui.toast(tr(locale, 'settings.shortcut.updated', { value: friendlyShortcut(applied, ui.appInfo?.platform) }));
     } catch (error) {
-      ui.toast(errorMessage(error) || tr(locale, 'settings.shortcut.saveFailed'), 'error');
+      ui.toast(shortcutErrorMessage(errorMessage(error), locale) || tr(locale, 'settings.shortcut.saveFailed'), 'error');
       throw error;
     }
   };
