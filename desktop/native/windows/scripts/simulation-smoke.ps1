@@ -53,7 +53,7 @@ $data=[ordered]@{
     artifact_allowlist=@('summary.json','ui-exercise.json','ui-resume.json','ui-normal-configure.json','ui-normal-quit.json')
     private_data_upload_allowed=$false;real_normal_control=[bool]$NormalPackageDir
     cases=@($ids|ForEach-Object{@{id=$_;status='not_run';required=($_ -notlike 'NORMAL-*' -or [bool]$NormalPackageDir)}})
-    cleanup=@();phase_failures=@();limitations=@(
+    cleanup=@();phase_failures=@();process_identity=@();limitations=@(
         @{id='TC-SIM-04-WeChat';status='not_run';reason='WeChat and its real account are not installed or automated on this runner'},
         @{id='TC-SIM-07-08-fault-matrix';status='not_run';reason='Full repeated-stop, crash/claim/journal dispatch and lifecycle boundary matrix is outside this installed shortcut smoke'},
         @{id='TC-SIM-09-reserved-unverified-recovery';status='not_run';reason='This smoke proves confirmed inserted restart only; reserved/unverified interruption recovery requires separate cases'},
@@ -79,7 +79,7 @@ function Case([string]$Id,[scriptblock]$Body){
     $row=$data.cases|Where-Object{$_.id -eq $Id}
     $row.started_at=[DateTime]::UtcNow.ToString('o')
     try{$row.observations=& $Body;$row.status='pass'}
-    catch{$row.status='fail';$row.error=Error-Text $_}
+    catch{$row.status='fail';$row.error=Error-Text $_;$row.failure_category=$_.FullyQualifiedErrorId;$row.failure_line=$_.InvocationInfo.ScriptLineNumber}
     $row.ended_at=[DateTime]::UtcNow.ToString('o')
 }
 function Passed([string]$Id){return ($data.cases|Where-Object{$_.id -eq $Id}).status -eq 'pass'}
@@ -123,20 +123,47 @@ function Port {
     $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start()
     try{return $listener.LocalEndpoint.Port}finally{$listener.Stop()}
 }
-function Facts([Diagnostics.Process]$Process){
-    $Process.Refresh();Assert-Smoke (-not $Process.HasExited) 'Owned process exited before identity observation'
-    $image=$Process.MainModule.FileName
-    return @{pid=$Process.Id;birth_ticks=$Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture);image=$image;sha256=(Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()}
+function Facts([Diagnostics.Process]$Process,[string]$ExpectedImage='',[string]$Symbol='controller'){
+    $clock=[Diagnostics.Stopwatch]::StartNew();$birth=$null
+    $observation=@{symbol=$Symbol;status='fail';attempts=0;stage='process-lifetime';module_absent_samples=0;image_absent_samples=0;elapsed_ms=0}
+    try{
+        do{
+            $observation.attempts++;$observation.stage='process-lifetime'
+            $Process.Refresh();Assert-Smoke (-not $Process.HasExited) "Facts[$Symbol] IDENTITY_EXITED before verification"
+            $actualBirth=$Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+            if($null -eq $birth){$birth=$actualBirth}else{Assert-Smoke ($actualBirth -ceq $birth) "Facts[$Symbol] IDENTITY_LIFETIME_CHANGED"}
+            $observation.stage='main-module';$module=$Process.MainModule
+            if($null -eq $module){$observation.module_absent_samples++}
+            else{
+                $observation.stage='image-path';$image=$module.FileName
+                if([string]::IsNullOrWhiteSpace($image)){$observation.image_absent_samples++}
+                else{
+                    $observation.stage='image-match';$image=[IO.Path]::GetFullPath($image)
+                    if($ExpectedImage){Assert-Smoke ($image -ieq [IO.Path]::GetFullPath($ExpectedImage)) "Facts[$Symbol] IDENTITY_IMAGE_MISMATCH"}
+                    $observation.stage='image-hash';$digest=(Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
+                    $observation.stage='lifetime-readback';$Process.Refresh()
+                    Assert-Smoke (-not $Process.HasExited -and $Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $birth) "Facts[$Symbol] IDENTITY_EXITED_OR_CHANGED during verification"
+                    Assert-Smoke ($clock.ElapsedMilliseconds -lt 5000) "Facts[$Symbol] IDENTITY_DEADLINE_EXCEEDED"
+                    $observation.stage='verified';$observation.status='verified'
+                    return @{pid=$Process.Id;birth_ticks=$birth;image=$image;sha256=$digest}
+                }
+            }
+            $remaining=5000-$clock.ElapsedMilliseconds
+            Assert-Smoke ($remaining -gt 0) "Facts[$Symbol] IDENTITY_NOT_READY within 5000 ms at $($observation.stage)"
+            $null=$Process.WaitForExit([int][Math]::Min(25,$remaining))
+        }while($true)
+    }catch{$observation.failure_category=$_.FullyQualifiedErrorId;throw}
+    finally{$observation.elapsed_ms=$clock.ElapsedMilliseconds;$data.process_identity+=@($observation)}
 }
 function Start-Owned([string]$Program,[string[]]$Arguments,[string]$Role,[string]$Name,[string]$Install=''){
     $info=[Diagnostics.ProcessStartInfo]::new($Program);$info.UseShellExecute=$false
     foreach($argument in $Arguments){$info.ArgumentList.Add($argument)}
     $process=[Diagnostics.Process]::Start($info)
-    $facts=Facts $process
-    Assert-Smoke ([IO.Path]::GetFullPath($facts.image) -ieq [IO.Path]::GetFullPath($Program)) 'Launched target delegated to an unowned executable'
+    $row=@{process=$process;role=$Role;name=$Name;facts=$null;identity='pending';active=$true;port=$null};$owned.Add($row)
+    $facts=Facts $process $Program "start-owned/$Name"
     $facts.role=$Role;$facts.name=$Name
     if($Install){$facts.install_dir=$Install}
-    $row=@{process=$process;facts=$facts;active=$true;port=$null};$owned.Add($row)
+    $row.facts=$facts;$row.identity='verified'
     return $row
 }
 function Start-App([bool]$IsNormal=$false){
@@ -146,7 +173,7 @@ function Start-App([bool]$IsNormal=$false){
     $row.port=$port;return $row
 }
 function Manifest($Main,[string]$Phase,$Extra=@{}){
-    $facts=@($owned|Where-Object{$_.active -and -not $_.process.HasExited}|ForEach-Object{$_.facts})
+    $facts=@($owned|Where-Object{$_.identity -eq 'verified' -and $_.active -and -not $_.process.HasExited}|ForEach-Object{$_.facts})
     $document=@{schema='svi-simulation-smoke-owner-v1';nonce=$nonce;owner=(Facts (Get-Process -Id $PID));targets=$facts;version=$version;evidence_dir=$EvidenceDir;probe_exe=$probe;injector_exe=$injector;restart_file=$restartFile}
     foreach($key in $Extra.Keys){$document[$key]=$Extra[$key]}
     $file=Join-Path $private "manifest-$Phase.json";Write-NewJson $document $file;return $file
@@ -181,19 +208,21 @@ function Record-Helpers($Main){
     if($Main.process.HasExited){return}
     $children=@(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($Main.process.Id) AND Name = 'smartvoiceinput-input.exe'")
     foreach($child in $children){
-        $previous=@($helpers|Where-Object{$_.facts.pid -eq $child.ProcessId -and $_.main_pid -eq $Main.process.Id -and -not $_.process.HasExited})
+        $previous=@($helpers|Where-Object{$_.process.Id -eq $child.ProcessId -and $_.main_pid -eq $Main.process.Id -and -not $_.process.HasExited})
         if($previous.Count){continue}
-        $process=Get-Process -Id $child.ProcessId -ErrorAction Stop;$facts=Facts $process
-        Assert-Smoke ($facts.image -ieq (Join-Path $Main.facts.install_dir 'resources/voice/smartvoiceinput-input.exe') -and $process.StartTime -ge $Main.process.StartTime) 'Main helper image or lifetime differs'
+        $process=Get-Process -Id $child.ProcessId -ErrorAction Stop
+        $row=@{process=$process;facts=$null;identity='pending';main_pid=$Main.process.Id};$helpers.Add($row)
+        $facts=Facts $process (Join-Path $Main.facts.install_dir 'resources/voice/smartvoiceinput-input.exe') 'production-helper'
+        Assert-Smoke ($process.StartTime -ge $Main.process.StartTime) 'Main helper lifetime differs'
         Assert-Smoke ($child.CommandLine -match "--parent-pid\s+$($Main.process.Id)(?:\s|$)") 'Main helper omitted its actual parent identity'
-        $helpers.Add(@{process=$process;facts=$facts;main_pid=$Main.process.Id})
+        $row.facts=$facts;$row.identity='verified'
     }
 }
 function Observe-Helpers($Main){
     $end=[DateTime]::UtcNow.AddSeconds(15)
     do{
         Record-Helpers $Main
-        $children=@($helpers|Where-Object{$_.main_pid -eq $Main.process.Id})
+        $children=@($helpers|Where-Object{$_.main_pid -eq $Main.process.Id -and $_.identity -eq 'verified'})
         if($children.Count -ge 1){break}
         Assert-Smoke (-not $Main.process.HasExited) 'Actual installed Main exited before helper observation'
         Start-Sleep -Milliseconds 80
@@ -205,7 +234,7 @@ function Exit-Confirmed($Main,[int]$MinimumHelpers=1){
     Assert-Smoke ($Main.process.WaitForExit(8000)) 'Native application menu did not quit the actual installed Main'
     Assert-Smoke ($Main.process.ExitCode -eq 0) 'Actual installed Main did not quit cleanly'
     $Main.active=$false
-    $children=@($helpers|Where-Object{$_.main_pid -eq $Main.process.Id})
+    $children=@($helpers|Where-Object{$_.main_pid -eq $Main.process.Id -and $_.identity -eq 'verified'})
     Assert-Smoke ($children.Count -ge $MinimumHelpers) 'Not all actually used production helper lifetimes were independently observed'
     foreach($helper in $children){Assert-Smoke ($helper.process.WaitForExit(2500)) 'Owned production helper remained after actual application quit'}
     return @{native_menu_quit=$true;main_exit_confirmed=$true;helper_exit_count=$children.Count;helpers_exited=$true}
@@ -336,7 +365,7 @@ try{
     }
 }catch{$data.infrastructure_error=Error-Text $_}
 finally{
-    foreach($row in @($owned|Where-Object{$_.facts.role -eq 'main'})){
+    foreach($row in @($owned|Where-Object{$_.role -eq 'main'})){
         try{if(-not $row.process.HasExited){$row.process.Kill($true);$data.cleanup+=@{kind='simulation-main';forced=$true;exit_confirmed=$row.process.WaitForExit(5000)}}}catch{$data.cleanup+=@{kind='simulation-main';forced=$true;exit_confirmed=$false}}
     }
     if($installed){Case 'SIM-UNINSTALL' {
@@ -362,7 +391,7 @@ finally{
         Case 'NORMAL-PROCESS-EXIT' {Exit-Confirmed $normal}
     }
     foreach($row in $owned){
-        try{if(-not $row.process.HasExited){$row.process.Kill($true)};$data.cleanup+=@{kind=$row.facts.role;exit_confirmed=$row.process.WaitForExit(5000)}}catch{$data.cleanup+=@{kind=$row.facts.role;exit_confirmed=$false}}
+        try{if(-not $row.process.HasExited){$row.process.Kill($true)};$data.cleanup+=@{kind=$row.role;identity=$row.identity;exit_confirmed=$row.process.WaitForExit(5000)}}catch{$data.cleanup+=@{kind=$row.role;identity=$row.identity;exit_confirmed=$false}}
     }
     foreach($helper in $helpers){try{$data.cleanup+=@{kind='production-helper';exit_confirmed=$helper.process.WaitForExit(2500)}}catch{$data.cleanup+=@{kind='production-helper';exit_confirmed=$false}}}
     if($normalInstalled){Case 'NORMAL-UNINSTALL' {
