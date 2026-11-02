@@ -53,6 +53,8 @@
 
 ## 待决问题
 
+- Windows 插入生命周期见证（2026-11-02，已修复待正式包复核）：S5 真机发现跨进程 `SetPropW` 在桌面堆紧张或 Chromium/XAML 窗口属性池耗尽时返回 `ERROR_NOT_ENOUGH_MEMORY (8)`，Chrome/新版记事本被误拒为 `TARGET_CHANGED`。`target_lifetime` 已改为 out-of-context `EVENT_OBJECT_DESTROY` WinEvent hook，S2 设计同步更新。本机 GNU 验证构建通过 Notepad/Chrome 完整应用会话（光标插入、选区替换、`inserted` 回执）及密码框拒绝回归；正式 MSVC 包、CI 三平台与 S5 其余参数仍待复核。
+
 - Windows 无麦克风模拟版实施决策（2026-11-02，已采用）：用户确认“快捷键开始胶囊、不访问麦克风、再次快捷键结束并插入固定文字”，并确认尽量复用产品逻辑、验后移除。比较本机模拟服务与进程内会话适配器后采用编译期替换采集源、Main 内置 loopback HTTP/WS；正式客户端会话、资格、journal 和原生输入沿用同一实现。身份、profile、自启、虚构数据独立，临时模块与构建入口按清单可移除。实现、构建和逐参数验收尚待完成，不将原 Windows 40 条状态改为通过。
 
 - Windows S5 执行准备（待落实）：已沟通优先准备由用户在已登录Windows桌面启动的本地PowerShell测试入口，收集报告后继续分析和补测。真机入口仍需适配与验证；当前没有建立Windows桌面连接，SSH或可视化远控通道也未配置。已有CI脚本不代表真机入口已就绪，设备提供、执行器就绪和实际用例通过须分别登记。此项不改变S3判据或S5未完成状态。
