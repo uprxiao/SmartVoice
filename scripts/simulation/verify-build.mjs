@@ -79,11 +79,11 @@ function asarReader() {
 function verifyArchiveModules(archive, flavor, output) {
   const asar = asarReader();
   const modules = checkModuleGraphs(flavor, layer =>
-    asar.extractFile(archive, `${output}/${layer}/build-modules.json`).toString('utf8'));
+    asar.extractFile(archive, join(output, layer, 'build-modules.json')).toString('utf8'));
   const paths = asar.listPackage(archive).map(value => value.replaceAll('\\', '/').replace(/^\/+/, ''));
   const entries = paths.filter(value => /\.(?:js|html|json)$/.test(value)
     && !value.endsWith('/build-modules.json') && !value.startsWith('node_modules/'))
-    .map(value => [value, asar.extractFile(archive, value).toString('utf8')]);
+    .map(value => [value, asar.extractFile(archive, join(...value.split('/'))).toString('utf8')]);
   checkContents(flavor, entries);
   return modules;
 }

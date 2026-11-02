@@ -209,9 +209,9 @@ test('release workflows keep publication dependent on all platform builds', () =
   const release = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(ci, /workflow_call:/);
   assert.match(build, /workflow_call:/);
-  assert.match(build, /platform: mac\n\s+arch: arm64/);
-  assert.match(build, /platform: mac\n\s+arch: x64/);
-  assert.match(build, /platform: win\n\s+arch: x64/);
+  assert.match(build, /platform: mac\r?\n\s+arch: arm64/);
+  assert.match(build, /platform: mac\r?\n\s+arch: x64/);
+  assert.match(build, /platform: win\r?\n\s+arch: x64/);
   assert.match(release, /tags: \['v\*'\]/);
   assert.match(release, /needs: \[metadata, build\]/);
   assert.match(release, /contents: write/);
