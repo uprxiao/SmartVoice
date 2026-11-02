@@ -53,7 +53,7 @@
 
 ## 待决问题
 
-- Windows 40 条本机仿真预验证（2026-11-02）：已执行 TC-WIN-01/02/06/07/09/20/21/22/23/24/25/26/28/29/33。TC-WIN-01 的 Notepad/Chrome 光标、选区、空框 9 组通过；TC-WIN-02 开始 A、切 B、finish 后改 B 选区，最终只写 B；TC-WIN-06 密码/只读/按钮/本应用/任务栏拒绝；TC-WIN-07 未知控件固定 unverified；TC-WIN-09 重复 insertion_id 不重写；TC-WIN-20 学习关闭；TC-WIN-24 隐藏主窗插入通过。以上均因正式包、高权限、快捷键等参数未齐，40 条台账仍为 7 条完整通过、28 条 partial、5 条 not_run。本机执行细节在本地验收记录，不提交；仿真结果不替代正式 MSVC/S5。
+- Windows 40 条本机仿真预验证（2026-11-02）：已执行 TC-WIN-01/02/06/07/08/09/20/21/22/23/24/25/26/28/29/33。TC-WIN-01 的 Notepad/Chrome 光标、选区、空框 9 组通过；TC-WIN-02 开始 A、切 B、finish 后改 B 选区，最终只写 B；TC-WIN-06 密码/只读/按钮/本应用/任务栏拒绝；TC-WIN-07 未知控件固定 unverified；TC-WIN-08 取消不迟到写入、新段正常；TC-WIN-09 重复 insertion_id 不重写；TC-WIN-20 学习关闭；TC-WIN-24 隐藏主窗插入通过。以上均因正式包、高权限、快捷键等参数未齐，40 条台账仍为 7 条完整通过、28 条 partial、5 条 not_run。本机执行细节在本地验收记录，不提交；仿真结果不替代正式 MSVC/S5。
 
 - Windows 插入生命周期见证（2026-11-02，已修复待正式包复核）：S5 真机发现跨进程 `SetPropW` 在桌面堆紧张或 Chromium/XAML 窗口属性池耗尽时返回 `ERROR_NOT_ENOUGH_MEMORY (8)`，Chrome/新版记事本被误拒为 `TARGET_CHANGED`。`target_lifetime` 已改为 out-of-context `EVENT_OBJECT_DESTROY` WinEvent hook，S2 设计同步更新。本机 GNU 验证构建通过 Notepad/Chrome 完整应用会话（光标插入、选区替换、`inserted` 回执）及密码框拒绝回归；正式 MSVC 包、CI 三平台与 S5 其余参数仍待复核。
 
