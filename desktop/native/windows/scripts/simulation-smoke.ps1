@@ -53,7 +53,7 @@ $data=[ordered]@{
     artifact_allowlist=@('summary.json','ui-exercise.json','ui-resume.json','ui-normal-configure.json','ui-normal-quit.json')
     private_data_upload_allowed=$false;real_normal_control=[bool]$NormalPackageDir
     cases=@($ids|ForEach-Object{@{id=$_;status='not_run';required=($_ -notlike 'NORMAL-*' -or [bool]$NormalPackageDir)}})
-    cleanup=@();phase_failures=@();process_identity=@();limitations=@(
+    cleanup=@();phase_failures=@();process_identity=@();helper_observations=@();limitations=@(
         @{id='TC-SIM-04-WeChat';status='not_run';reason='WeChat and its real account are not installed or automated on this runner'},
         @{id='TC-SIM-07-08-fault-matrix';status='not_run';reason='Full repeated-stop, crash/claim/journal dispatch and lifecycle boundary matrix is outside this installed shortcut smoke'},
         @{id='TC-SIM-09-reserved-unverified-recovery';status='not_run';reason='This smoke proves confirmed inserted restart only; reserved/unverified interruption recovery requires separate cases'},
@@ -210,12 +210,39 @@ function Record-Helpers($Main){
     foreach($child in $children){
         $previous=@($helpers|Where-Object{$_.process.Id -eq $child.ProcessId -and $_.main_pid -eq $Main.process.Id -and -not $_.process.HasExited})
         if($previous.Count){continue}
-        $process=Get-Process -Id $child.ProcessId -ErrorAction Stop
-        $row=@{process=$process;facts=$null;identity='pending';main_pid=$Main.process.Id};$helpers.Add($row)
-        $facts=Facts $process (Join-Path $Main.facts.install_dir 'resources/voice/smartvoiceinput-input.exe') 'production-helper'
-        Assert-Smoke ($process.StartTime -ge $Main.process.StartTime) 'Main helper lifetime differs'
-        Assert-Smoke ($child.CommandLine -match "--parent-pid\s+$($Main.process.Id)(?:\s|$)") 'Main helper omitted its actual parent identity'
-        $row.facts=$facts;$row.identity='verified'
+        $process=$null;$row=$null
+        $observation=@{main_kind=$Main.role;candidate_pid=$child.ProcessId;stage='snapshot-to-handle';status='fail';exit_confirmed=$false;verified=$false}
+        try{
+            try{$process=Get-Process -Id $child.ProcessId -ErrorAction Stop}catch{
+                if($_.FullyQualifiedErrorId -notlike 'NoProcessFoundForGivenId*'){throw}
+                $observation.status='snapshot-disappeared';$observation.failure_category=$_.FullyQualifiedErrorId
+                continue
+            }
+            $null=$process.SafeHandle
+            if($process.WaitForExit(0)){$observation.status='exited-before-verification';$observation.exit_confirmed=$true;continue}
+            $observation.stage='snapshot-birth'
+            $snapshotBirth=$child.CreationDate.ToUniversalTime().Ticks;$actualBirth=$process.StartTime.ToUniversalTime().Ticks
+            # CIM CreationDate exposes microseconds; compare its exact represented precision.
+            Assert-Smoke (($actualBirth-$actualBirth%10) -eq ($snapshotBirth-$snapshotBirth%10)) 'HELPER_SNAPSHOT_BIRTH_MISMATCH'
+            $row=@{process=$process;facts=$null;identity='pending';main_pid=$Main.process.Id};$helpers.Add($row)
+            $observation.stage='facts'
+            $facts=Facts $process (Join-Path $Main.facts.install_dir 'resources/voice/smartvoiceinput-input.exe') 'production-helper'
+            Assert-Smoke ($process.StartTime -ge $Main.process.StartTime) 'Main helper lifetime differs'
+            Assert-Smoke ($child.CommandLine -match "--parent-pid\s+$($Main.process.Id)(?:\s|$)") 'Main helper omitted its actual parent identity'
+            $row.facts=$facts;$row.identity='verified'
+            $observation.status='verified';$observation.verified=$true
+        }catch{
+            $failure=$_;$exited=$false
+            if($null -ne $process){try{$exited=$process.WaitForExit(0)}catch{}}
+            $knownMismatch=$failure.Exception.Message -match 'IDENTITY_(?:IMAGE|HASH)_MISMATCH|IDENTITY_LIFETIME_CHANGED|HELPER_SNAPSHOT_BIRTH_MISMATCH|Main helper lifetime differs|Main helper omitted'
+            if($exited -and -not $knownMismatch){
+                if($null -ne $row){$row.identity='exited-before-verification'}
+                $observation.status='exited-before-verification';$observation.exit_confirmed=$true;$observation.failure_category=$failure.FullyQualifiedErrorId
+                continue
+            }
+            $observation.failure_category=$failure.FullyQualifiedErrorId
+            throw
+        }finally{$data.helper_observations+=@($observation)}
     }
 }
 function Observe-Helpers($Main){
@@ -277,6 +304,12 @@ function Journal-Facts {
     }
     return @{file_count=$files.Count;unique_session_count=$seen.Count;metadata_fields_only=$true;all_inserted_observable_and_receipt_confirmed=$true;state_or_tokens_exported=$false}
 }
+function Journal-Snapshot {
+    $root=Join-Path $profile 'insertion-marks';$files=[ordered]@{}
+    $exists=Test-Path -LiteralPath $root
+    if($exists){foreach($file in @(Get-ChildItem -LiteralPath $root -File -Recurse|Sort-Object FullName)){$files[[IO.Path]::GetRelativePath($root,$file.FullName)]=(Get-FileHash -LiteralPath $file.FullName).Hash}}
+    return @{exists=$exists;files=$files}
+}
 function Uninstall-Product([string]$Directory,[string]$ExeName){
     $uninstallers=@(Get-ChildItem -LiteralPath $Directory -Filter 'Uninstall*.exe' -File)
     Assert-Smoke ($uninstallers.Count -eq 1) 'Exactly one owned NSIS uninstaller is required'
@@ -293,7 +326,11 @@ try{
         foreach($name in @($entry,$normalEntry,$canaryEntry)){$state=Registry-State $name;Assert-Smoke (-not $state.run.exists -and -not $state.approved.exists) 'Refusing to replace an existing product or canary startup registration'}
         $compiler=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
         Assert-Smoke (Test-Path -LiteralPath $compiler) 'CI .NET Framework C# compiler unavailable'
-        & $compiler /nologo /target:exe /platform:x64 /reference:System.Web.Extensions.dll "/out:$injector" (Join-Path $PSScriptRoot '../fixtures/simulation-shortcut.cs')|Out-Null
+        $framework=Split-Path $compiler -Parent
+        $uiaReferences=@('UIAutomationClient.dll','UIAutomationTypes.dll','WindowsBase.dll')|ForEach-Object{Join-Path $framework "WPF/$_"}
+        foreach($reference in $uiaReferences){Assert-Smoke (Test-Path -LiteralPath $reference) 'CI Framework UI Automation assemblies unavailable'}
+        $referenceArguments=@($uiaReferences|ForEach-Object{"/reference:$_"})
+        & $compiler /nologo /target:exe /platform:x64 /reference:System.Web.Extensions.dll @referenceArguments "/out:$injector" (Join-Path $PSScriptRoot '../fixtures/simulation-shortcut.cs')|Out-Null
         Assert-Smoke ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $injector)) 'Independent fixed shortcut injector did not compile'
         [IO.Directory]::CreateDirectory($profile)|Out-Null;[IO.Directory]::CreateDirectory($normalProfile)|Out-Null
         [IO.File]::WriteAllText((Join-Path $profile 'simulation-canary.txt'),'Fictional simulation profile preservation canary.')
@@ -369,12 +406,14 @@ finally{
         try{if(-not $row.process.HasExited){$row.process.Kill($true);$data.cleanup+=@{kind='simulation-main';forced=$true;exit_confirmed=$row.process.WaitForExit(5000)}}}catch{$data.cleanup+=@{kind='simulation-main';forced=$true;exit_confirmed=$false}}
     }
     if($installed){Case 'SIM-UNINSTALL' {
+        $journalBefore=Journal-Snapshot
         $result=Uninstall-Product $installDir 'SmartVoiceInput Simulation.exe';$script:installed=$false
         $state=Registry-State $entry
         Assert-Smoke (-not $state.run.exists -and -not $state.approved.exists) 'Simulation uninstall left its own startup values'
         Assert-Smoke ((Get-FileHash -LiteralPath (Join-Path $profile 'simulation-canary.txt')).Hash -eq $markerHash) 'Uninstall changed the owned simulation profile canary'
-        Assert-Smoke (Test-Path -LiteralPath (Join-Path $profile 'insertion-marks')) 'Uninstall removed the owned execution journal'
-        return @{nsis=$result;own_run_and_approved_removed=$true;profile_and_journal_preserved=$true}
+        $journalAfter=Journal-Snapshot
+        Assert-Smoke (($journalBefore|ConvertTo-Json -Depth 8 -Compress) -ceq ($journalAfter|ConvertTo-Json -Depth 8 -Compress)) 'Uninstall changed the actual pre-existing execution journal state'
+        return @{nsis=$result;own_run_and_approved_removed=$true;profile_canary_preserved=$true;journal_preexisting=$journalBefore.exists;journal_file_count=$journalBefore.files.Count;journal_state_preserved=$true}
     }}
     if(Passed 'SIM-SETUP'){Case 'SIM-ISOLATION' {
         Assert-Smoke ((Get-FileHash -LiteralPath (Join-Path $normalProfile 'simulation-canary.txt')).Hash -eq $normalMarkerHash) 'Simulation installation/uninstall changed the normal profile canary'

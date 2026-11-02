@@ -155,7 +155,7 @@ async function focusMain() {
   return result;
 }
 function inject(target, foreground, action) {
-  const bytes = execFileSync(manifest.injector_exe, ['--manifest', manifestFile, '--nonce', manifest.nonce, '--pid', String(target.pid), '--hwnd', String(foreground.hwnd), '--action', action], { windowsHide: true, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const bytes = execFileSync(manifest.injector_exe, ['--manifest', manifestFile, '--nonce', manifest.nonce, '--pid', String(target.pid), '--hwnd', String(foreground.hwnd), '--action', action], { windowsHide: true, timeout: action === 'menu-quit' ? 25000 : 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const facts = JSON.parse(bytes); check(facts.sent && facts.owned_foreground_verified && facts.integrity_rid === 8192, 'Independent OS injector did not confirm the fixed chord');
   return facts;
 }
@@ -219,7 +219,9 @@ async function audioFacts() {
   return { main_and_hud: facts, no_permission_force_grant: true, timing: 'armed before any simulated session, includes all shortcut/cancel/result cases in this process' };
 }
 async function quit() {
-  const foreground = await focusMain(); return inject(mainTarget, foreground, 'menu-quit');
+  const foreground = await focusMain(), facts = inject(mainTarget, foreground, 'menu-quit');
+  check(facts.process_exit_confirmed && facts.menu?.stage === 'exit-confirmed' && facts.menu.menu_owner_verified, 'Actual OS menu action did not confirm the verified Main process exit');
+  return facts;
 }
 async function historyStats(expectedSuccesses, expectedCancelled) {
   const history = await rpc('history.list', null, 100);
