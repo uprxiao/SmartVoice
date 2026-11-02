@@ -38,20 +38,23 @@ function query<T>(schema: z.ZodType<T>, url: URL): T {
 }
 
 async function readBody(request: IncomingMessage): Promise<Buffer> {
-  if (Number(request.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
-    request.resume(); throw new SimulationError(413, 'REQUEST_TOO_LARGE', '模拟请求体超过限制');
-  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let length = 0, settled = false;
+    let oversized = Number(request.headers['content-length'] ?? 0) > MAX_BODY_BYTES;
     request.on('data', (part: Buffer) => {
-      if (settled) return;
+      if (settled || oversized) return;
       length += part.length;
       if (length > MAX_BODY_BYTES) {
-        settled = true; chunks.length = 0; reject(new SimulationError(413, 'REQUEST_TOO_LARGE', '模拟请求体超过限制'));
+        oversized = true; chunks.length = 0;
       } else chunks.push(part);
     });
-    request.on('end', () => { if (!settled) { settled = true; resolve(Buffer.concat(chunks)); } });
+    request.on('end', () => {
+      if (settled) return;
+      settled = true;
+      if (oversized) reject(new SimulationError(413, 'REQUEST_TOO_LARGE', '模拟请求体超过限制'));
+      else resolve(Buffer.concat(chunks));
+    });
     request.on('error', () => { if (!settled) { settled = true; reject(new SimulationError(400, 'REQUEST_INTERRUPTED', '模拟请求已中断')); } });
     request.on('aborted', () => { if (!settled) { settled = true; reject(new SimulationError(400, 'REQUEST_INTERRUPTED', '模拟请求已中断')); } });
   });

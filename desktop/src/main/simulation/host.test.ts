@@ -130,6 +130,42 @@ describe('Main-owned simulation HTTP and WS protocol', () => {
     expect((await api.getSession(created.session_id)).state).toBe('created');
   });
 
+  it.each(['declared', 'chunked'] as const)('drains an oversized %s upload before closing its complete 413 response', async framing => {
+    const directory = folder(), host = await start(directory);
+    const before = readFileSync(join(directory, 'state.json'));
+    const length = 1024 * 1024 + 8193;
+    let continued!: () => void;
+    const ready = new Promise<void>(resolve => { continued = resolve; });
+    let earlyResponse = false;
+    let upload!: ReturnType<typeof httpRequest>;
+    const response = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      upload = httpRequest(`${host.endpoint.origin}/api/auth/register`, { method: 'POST', headers: {
+        ...host.endpoint.headers, 'Content-Type': 'application/json',
+        ...(framing === 'declared' ? { 'Content-Length': length } : {}),
+        Expect: '100-continue',
+      } }, incoming => {
+        earlyResponse = !upload.writableFinished;
+        const chunks: Buffer[] = [];
+        incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+        incoming.once('end', () => resolve({ status: incoming.statusCode!, body: Buffer.concat(chunks).toString() }));
+        incoming.once('error', reject);
+      });
+      upload.once('continue', continued);
+      upload.once('error', reject);
+      upload.flushHeaders();
+    });
+    await ready;
+    if (framing === 'chunked') upload.write(Buffer.alloc(length, 32));
+    const health = await request(host, '/api/v1/capabilities');
+    expect(health.status).toBe(200); await health.arrayBuffer();
+    upload.end(framing === 'declared' ? Buffer.alloc(length, 32) : undefined);
+    const rejected = await response;
+    expect(rejected.status).toBe(413);
+    expect(JSON.parse(rejected.body)).toMatchObject({ error: { code: 'REQUEST_TOO_LARGE' } });
+    expect(earlyResponse).toBe(false);
+    expect(readFileSync(join(directory, 'state.json'))).toEqual(before);
+  });
+
   it('acknowledges actual frame totals and emits the fixed hashed result only after a valid end', async () => {
     const host = await start(), api = await signIn(host), created = await api.createSession(randomUUID(), false);
     const { socket, messages } = await openAudio(api, created.session_id);
