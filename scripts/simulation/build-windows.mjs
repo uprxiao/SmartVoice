@@ -62,6 +62,12 @@ $ErrorActionPreference = 'Stop'
 $installDir = ${quote(installDir)}
 if (Test-Path $installDir) { throw 'The owned install target already exists' }
 $installed = $false
+function Hash-File([string]$path) {
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($path)
+  try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $algorithm.Dispose() }
+}
 try {
   $process = Start-Process -FilePath ${quote(installer)} -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
   if ($process.ExitCode -ne 0) { throw "Simulation installer exited with $($process.ExitCode)" }
@@ -69,9 +75,9 @@ try {
   $exe = Join-Path $installDir ${quote(simulation.executableName + '.exe')}
   if (-not (Test-Path $exe)) { throw 'Installed simulation executable is missing' }
   if ((Get-Item $exe).VersionInfo.ProductVersion -notlike ${quote(version)} + '*') { throw 'Installed simulation version differs' }
-  if ((Get-FileHash $exe).Hash.ToLowerInvariant() -ne ${quote(payload.executable.sha256)}) { throw 'Installed simulation executable digest differs' }
+  if ((Hash-File $exe) -ne ${quote(payload.executable.sha256)}) { throw 'Installed simulation executable digest differs' }
   $helper = Join-Path $installDir 'resources/voice/smartvoiceinput-input.exe'
-  if ((Get-FileHash $helper).Hash.ToLowerInvariant() -ne ${quote(payload.helper.sha256)}) { throw 'Installed simulation helper digest differs' }
+  if ((Hash-File $helper) -ne ${quote(payload.helper.sha256)}) { throw 'Installed simulation helper digest differs' }
   if (Test-Path (Join-Path $installDir 'resources/service-ca.crt')) { throw 'Unexpected production CA in simulation installation' }
   Write-Output 'nsis-installed'
 } finally {
