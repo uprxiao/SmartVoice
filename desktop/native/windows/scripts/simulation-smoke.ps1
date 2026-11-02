@@ -123,36 +123,52 @@ function Port {
     $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start()
     try{return $listener.LocalEndpoint.Port}finally{$listener.Stop()}
 }
+function Process-Image([Diagnostics.Process]$Process){
+    if(-not ('SimulationSmokeImageQuery' -as [type])){Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class SimulationSmokeImageQuery {
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder image, ref uint size);
+}
+'@}
+    $size=[uint32]32768;$buffer=[Text.StringBuilder]::new([int]$size)
+    if(-not [SimulationSmokeImageQuery]::QueryFullProcessImageNameW($Process.Handle,0,$buffer,[ref]$size)){throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())}
+    Assert-Smoke ($size -gt 0 -and $size -lt $buffer.Capacity) 'IDENTITY_IMAGE_QUERY_INVALID_LENGTH'
+    return $buffer.ToString(0,[int]$size)
+}
+function Image-Label([string]$Image){
+    if(-not $Image){return $null}
+    $full=[IO.Path]::GetFullPath($Image)
+    if($env:WINDIR -and $full.StartsWith(([IO.Path]::GetFullPath($env:WINDIR).TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)){return 'windows/'+[IO.Path]::GetRelativePath($env:WINDIR,$full).Replace('\','/')}
+    return [IO.Path]::GetFileName($full)
+}
 function Facts([Diagnostics.Process]$Process,[string]$ExpectedImage='',[string]$Symbol='controller'){
     $clock=[Diagnostics.Stopwatch]::StartNew();$verificationClock=[Diagnostics.Stopwatch]::new();$birth=$null
-    $observation=@{symbol=$Symbol;status='fail';attempts=0;stage='process-lifetime';module_absent_samples=0;image_absent_samples=0;ready_wait_ms=0;verification_ms=0;elapsed_ms=0}
+    $observation=@{symbol=$Symbol;status='fail';attempts=1;stage='process-handle';image_source='QueryFullProcessImageNameW';expected_image=(Image-Label $ExpectedImage);ready_wait_ms=0;verification_ms=0;elapsed_ms=0}
     try{
-        do{
-            $observation.attempts++;$observation.stage='process-lifetime'
-            $Process.Refresh();Assert-Smoke (-not $Process.HasExited) "Facts[$Symbol] IDENTITY_EXITED before verification"
-            $actualBirth=$Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
-            if($null -eq $birth){$birth=$actualBirth}else{Assert-Smoke ($actualBirth -ceq $birth) "Facts[$Symbol] IDENTITY_LIFETIME_CHANGED"}
-            $observation.stage='main-module';$module=$Process.MainModule
-            if($null -eq $module){$observation.module_absent_samples++}
-            else{
-                $observation.stage='image-path';$image=$module.FileName
-                if([string]::IsNullOrWhiteSpace($image)){$observation.image_absent_samples++}
-                else{
-                    $observation.ready_wait_ms=$clock.ElapsedMilliseconds;$verificationClock.Start()
-                    $observation.stage='image-match';$image=[IO.Path]::GetFullPath($image)
-                    if($ExpectedImage){Assert-Smoke ($image -ieq [IO.Path]::GetFullPath($ExpectedImage)) "Facts[$Symbol] IDENTITY_IMAGE_MISMATCH"}
-                    $observation.stage='image-hash';$digest=(Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
-                    $observation.stage='lifetime-readback';$Process.Refresh()
-                    Assert-Smoke (-not $Process.HasExited -and $Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $birth) "Facts[$Symbol] IDENTITY_EXITED_OR_CHANGED during verification"
-                    $observation.stage='verified';$observation.status='verified'
-                    return @{pid=$Process.Id;birth_ticks=$birth;image=$image;sha256=$digest}
-                }
-            }
-            $remaining=5000-$clock.ElapsedMilliseconds
-            Assert-Smoke ($remaining -gt 0) "Facts[$Symbol] IDENTITY_NOT_READY within 5000 ms at $($observation.stage)"
-            $null=$Process.WaitForExit([int][Math]::Min(25,$remaining))
-        }while($true)
-    }catch{$observation.failure_category=$_.FullyQualifiedErrorId;throw}
+        $null=$Process.Handle
+        $observation.stage='process-lifetime';$Process.Refresh()
+        Assert-Smoke (-not $Process.HasExited) "Facts[$Symbol] IDENTITY_EXITED before verification"
+        $birth=$Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $observation.stage='process-image-query';$image=Process-Image $Process
+        $observation.observed_image=Image-Label $image
+        $observation.ready_wait_ms=$clock.ElapsedMilliseconds;$verificationClock.Start()
+        $observation.stage='image-match';$image=[IO.Path]::GetFullPath($image)
+        if($ExpectedImage){Assert-Smoke ($image -ieq [IO.Path]::GetFullPath($ExpectedImage)) "Facts[$Symbol] IDENTITY_IMAGE_MISMATCH"}
+        $observation.stage='image-hash';$digest=(Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
+        $observation.stage='lifetime-readback';$Process.Refresh()
+        Assert-Smoke (-not $Process.HasExited -and $Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $birth) "Facts[$Symbol] IDENTITY_EXITED_OR_CHANGED during verification"
+        $observation.stage='verified';$observation.status='verified'
+        return @{pid=$Process.Id;birth_ticks=$birth;image=$image;sha256=$digest}
+    }catch{
+        $observation.failure_category=$_.FullyQualifiedErrorId
+        $cause=$_.Exception.GetBaseException()
+        if($cause -is [ComponentModel.Win32Exception]){$observation.native_error_code=$cause.NativeErrorCode}
+        throw
+    }
     finally{
         $observation.elapsed_ms=$clock.ElapsedMilliseconds
         if(-not $verificationClock.IsRunning){$observation.ready_wait_ms=$observation.elapsed_ms}

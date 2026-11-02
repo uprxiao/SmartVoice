@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Automation;
@@ -31,6 +32,9 @@ public static class SimulationShortcut {
     [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
     [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder image, ref uint size);
 
     static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     static int Integrity(Process process) {
@@ -54,12 +58,22 @@ public static class SimulationShortcut {
         using (var input = File.OpenRead(file)) using (var sha = SHA256.Create())
             return BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
     }
+    static string ProcessImage(IntPtr processHandle) {
+        uint length = 32768;
+        var image = new StringBuilder((int)length);
+        if (!QueryFullProcessImageNameW(processHandle, 0, image, ref length)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        Require(length > 0 && length < image.Capacity, "Process image query returned invalid length");
+        return Path.GetFullPath(image.ToString(0, (int)length));
+    }
     static Process Verify(Dictionary<string, object> facts) {
         var process = Process.GetProcessById(Convert.ToInt32(facts["pid"], CultureInfo.InvariantCulture));
+        IntPtr processHandle = process.Handle;
         Require(!process.HasExited && process.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture) == (string)facts["birth_ticks"], "Owned process lifetime differs");
-        string image = Path.GetFullPath(process.MainModule.FileName);
+        string image = ProcessImage(processHandle);
         Require(String.Equals(image, Path.GetFullPath((string)facts["image"]), StringComparison.OrdinalIgnoreCase), "Owned process image differs");
         Require(Hash(image) == (string)facts["sha256"], "Owned process image digest differs");
+        process.Refresh();
+        Require(!process.HasExited && process.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture) == (string)facts["birth_ticks"], "Owned process lifetime changed during image verification");
         Require(Integrity(process) == 8192, "Owned target must be Medium");
         return process;
     }

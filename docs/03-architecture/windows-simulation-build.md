@@ -41,7 +41,7 @@ Windows x64 原生 CI 构建 NSIS、实际安装及运行。使用实际全局�
 
 开发检查使用 `desktop` 中的 `pnpm typecheck`、`pnpm test`。正常构建与 `pnpm build:simulation` 在同一工作目录顺序执行；electron-vite 的配置编译缓存不能在两个构建之间并行共享。Windows x64 用 `pnpm package:simulation` 生成独立 NSIS；其他系统明确拒绝此打包入口。`scripts/simulation/verify-build.mjs` 同时核对构建模块图与实际 ASAR，检查模拟包不含音频设备 API、正常包不含模拟能力。安装包 manifest 带 flavor、源码、身份、Electron 输入和资源摘要；模拟 flavor 无法进入正式发布校验。
 
-CI 由 `build.yml` 的 `simulation_only` 入口调用 `windows-simulation.yml`，只上传门禁全部成功后的测试 artifact，不创建 tag 或 Release。实际安装的正常包作为并存对照。匿名证据只包含 `summary.json` 及四份显式列出的 UI 报告，私有工作目录中的凭据、模拟状态、进程清单和浏览器 profile 不上传。
+CI 由 `build.yml` 的 `simulation_only` 入口调用 `windows-simulation.yml`。构建、ASAR、摘要与实际安装检查通过后，先保存名称明确带 `unverified` 的诊断安装包；它只表示安装阶段通过。名称为已验证的最终 artifact 仍须全部运行门禁成功后上传，不创建 tag 或 Release。实际安装的正常包作为并存对照。匿名证据只包含 `summary.json` 及四份显式列出的 UI 报告，私有工作目录中的凭据、模拟状态、进程清单和浏览器 profile 不上传。
 
 ## 安装后的测试方式
 
