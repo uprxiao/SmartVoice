@@ -1,0 +1,19 @@
+.simulation-window { max-width: 1080px; }
+.simulation-content { padding-top: 24px; }
+.simulation-banner { width: fit-content; padding: 7px 12px; margin-bottom: 22px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-size: 12px; color: var(--text-2); }
+.simulation-content h1 { margin-bottom: 10px; }
+.simulation-description { font-size: 14px; line-height: 24px; color: var(--text-3); margin-bottom: 24px; }
+.simulation-content .platform-hud-stage { min-height: 170px; margin-bottom: 18px; }
+.simulation-content .hud-preview { margin: 14px auto; }
+.simulation-content .hud-preview[hidden], .simulation-fixed[hidden] { display: none; }
+.simulation-signal { width: 60px; text-align: center; font-size: 14px; letter-spacing: 2px; }
+.simulation-actions { display: flex; align-items: center; gap: 14px; }
+.simulation-actions .primary-btn { min-width: 128px; }
+.simulation-result { margin-top: 24px; }
+.simulation-result label { display: block; margin-bottom: 9px; font-size: 14px; }
+.simulation-result textarea { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); font: 14px/22px var(--font-sans); resize: vertical; }
+.simulation-result textarea:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.simulation-result p { margin-top: 8px; }
+.simulation-fixed { margin-top: 16px; padding: 12px; background: var(--surface); border-radius: var(--radius-lg); font-size: 14px; line-height: 22px; }
+.simulation-content button:disabled { opacity: .45; cursor: default; }
+.simulation-content button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

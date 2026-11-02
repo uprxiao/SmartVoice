@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SmartVoiceInput · Windows 模拟测试原型</title>
+  <link rel="stylesheet" href="assets/app.css">
+  <link rel="stylesheet" href="assets/windows.css">
+  <link rel="stylesheet" href="assets/windows-simulation.css">
+</head>
+<body>
+  <div class="prototype-shell">
+    <header class="review-toolbar">
+      <div><strong>Windows 无麦克风模拟测试版</strong><span>原型仅演示页面内交互，不操作外部窗口或系统剪贴板。</span></div>
+      <nav>
+        <a href="windows.html">Windows 视觉基准</a>
+        <label>结束结果 <select id="outcome"><option value="inserted">已核验插入</option><option value="unverified">无法核验</option><option value="failed">目标拒绝</option></select></label>
+        <button id="reset">重置演示</button>
+      </nav>
+    </header>
+    <div class="app-window simulation-window">
+      <div class="titlebar win-title"><span>SmartVoiceInput 模拟测试</span><span>─　□　×</span></div>
+      <div class="app-body">
+        <aside class="platform-nav">
+          <strong class="brand-name">SmartVoiceInput</strong>
+          <button class="selected">首页</button>
+          <button disabled>历史记录</button>
+          <button disabled>个人词库</button>
+          <p class="platform-note">本页聚焦模拟输入入口。其余页面沿用已有原型。</p>
+        </aside>
+        <main class="platform-content simulation-content">
+          <div class="simulation-banner" role="note">模拟测试 · 固定文字 · 不使用麦克风</div>
+          <h1>按快捷键，开始模拟输入</h1>
+          <p class="simulation-description">第一次显示胶囊，第二次结束并产生固定文字。正式版本仍使用真实录音。</p>
+          <div class="platform-hud-stage">
+            <div id="emptyHud" class="platform-note">等待开始</div>
+            <div id="hud" class="hud-preview" data-phase="recording" hidden>
+              <button id="cancel" aria-label="取消模拟输入">×</button>
+              <span id="signal" class="simulation-signal" aria-label="模拟信号">▂▅▃▆▂</span>
+              <button id="finish" class="confirm" aria-label="结束模拟输入">✓</button>
+              <span id="hudProcessing" class="hud-demo-loading" hidden>正在处理</span>
+            </div>
+            <p id="status" class="platform-note" role="status" aria-live="polite">未开始，本页未请求麦克风。</p>
+          </div>
+          <div class="simulation-actions"><button id="toggle" class="primary-btn">开始模拟输入</button><kbd>Ctrl + Shift + Space</kbd></div>
+          <div class="simulation-result">
+            <label for="target">页面内虚构输入框</label>
+            <textarea id="target" rows="3">BEGIN React END</textarea>
+            <p class="platform-note">实际测试版将使用原生辅助程序写入前台应用。本页只演示固定文字和状态。</p>
+          </div>
+          <div id="result" class="simulation-fixed" hidden></div>
+        </main>
+      </div>
+    </div>
+    <footer class="review-footer">模拟通过用于对应 Windows 桌面功能。真实采集、模型质量、物理按键、输入法、多屏和系统登录均分别验收。</footer>
+  </div>
+  <script src="assets/windows-simulation.js"></script>
+</body>
+</html>
