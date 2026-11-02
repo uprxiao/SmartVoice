@@ -11,7 +11,7 @@
 | 辅助功能未授权提示（TC-INSERT-22） | 已完成，随 v0.0.1 发布 |
 | **Windows 版本（v0.0.2）**：Windows 文字插入、权限与界面按平台区分、原生辅助程序 | [范围决策](02-prd/windows-version-decision-20261029.md)已确认；**S0/S1/S2/S3 已补齐复核，S4 主体实现与当前环境自动回归通过，S5待真机验收**。见 [S0 原型](01-prototype/windows-v002.md)与 [WIN-01～12](02-prd/windows-v002-requirements.md)。完整三端检查、三平台构建、56项原生参数、23组实际Main/PG/Admin联调和补充边界通过；原40条按层级登记7条pass、28条partial、5条not_run。真实音频/模型、物理按键、输入法、多屏及系统登录等参数保留，不宣称40条或S5全部通过 |
 | 快速纠正学习（BR-08 2026-10-28 修订） | S0–S3 已起草，**待评审**；开发计划顺延到 v0.0.3（v0.0.2 先做 Windows 版） |
-| Windows 无麦克风模拟验收版 | 2026-11-02 用户明确要求并进一步确认临时、贴近正式产品、验后移除。[S0](01-prototype/windows-simulation.md)已实际浏览器复核；[S1](02-prd/windows-simulation-test.md)按用户已确认行为登记；[S2](03-architecture/windows-simulation-build.md)两份独立方案对比后确定；[S3](04-test/test-cases-windows-simulation.md)随后生成并按 SIM-01～12 复核。S4 开发中，尚无新测试包或真机通过记录；模拟结果不替代真实音频与原 S5 参数 |
+| Windows 无麦克风模拟验收版 | 2026-11-02 用户明确要求并进一步确认临时、贴近正式产品、验后移除。[S0](01-prototype/windows-simulation.md)已实际浏览器复核；[S1](02-prd/windows-simulation-test.md)按用户已确认行为登记；[S2](03-architecture/windows-simulation-build.md)两份独立方案对比后确定；[S3](04-test/test-cases-windows-simulation.md)随后生成并按 SIM-01～12 复核。S4 临时实现及本机类型检查、Desktop 763 项、构建工具 33 项和正常/模拟模块边界检查通过；Windows 安装与实际插入门禁尚待执行。模拟结果不替代真实音频与原 S5 参数 |
 
 已知限制：Mac 预览包未经 Apple 签名与公证；Windows 安装包未签名，完整业务验收未完成。helper已派发后被强制终止，临时剪贴板可能尚未恢复，须检查目标与剪贴板；系统不自动重试或补偿粘贴。至少2小时实际使用稳定性与其余必需真机参数仍待执行。
 

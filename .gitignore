@@ -35,12 +35,14 @@ node_modules/
 .pnpm-store/
 dist/
 out/
+out-simulation/
 coverage/
 *.tsbuildinfo
 .vite/
 .cache/
 /release/
 /desktop/release/
+/desktop/release-simulation/
 
 # 本地运行数据和临时音频
 /tmp/

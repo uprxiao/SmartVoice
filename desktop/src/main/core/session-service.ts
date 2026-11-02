@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { clipboard } from 'electron';
 import WebSocket from 'ws';
-import { API_BASE_URL, AUDIO, sessionMaxSamples, wsUrl } from '@shared/config';
+import { AUDIO, sessionMaxSamples } from '@shared/config';
 import type {
   Insertion, InsertionOutcome, LearningSuggestion, Session, SessionProgress,
   SessionResult, SessionStartResult,
@@ -312,7 +312,8 @@ export class SessionService {
     const token = this.api.accessTokenValue;
     if (!token || !ctx.sessionId) return Promise.reject(new Error('登录已过期，请重新登录'));
     return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(wsUrl(`/ws/v1/sessions/${ctx.sessionId}/audio`), { headers: { Authorization: `Bearer ${token}` } });
+      const socket = this.api.audioSocket(`/ws/v1/sessions/${ctx.sessionId}/audio`);
+      const ws = new WebSocket(socket.url, { headers: socket.headers });
       this.ws = ws;
       const timer = setTimeout(() => this.fail(ctx, 'CONNECT_TIMEOUT'), 10_000);
       this.readyWaiter = { resolve, reject, timer };
@@ -920,7 +921,7 @@ export class SessionService {
   }
 
   private observationIdentity(ctx: OperationContext, mark: InsertionMark, targetId: string): ObservationIdentity {
-    return { origin: API_BASE_URL, userId: ctx.userId, authEpoch: ctx.accountEpoch, sessionId: mark.session_id,
+    return { origin: this.api.storageIdentity, userId: ctx.userId, authEpoch: ctx.accountEpoch, sessionId: mark.session_id,
       resultId: mark.result_id, insertionId: mark.insertion_id, targetId };
   }
   private startObserver(ctx: OperationContext, mark: InsertionMark, targetId: string, result: SessionResult): void {

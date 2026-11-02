@@ -45,7 +45,7 @@ jobs:
         # Linux validates builder configuration; native bundle checks run on macOS.
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test version, tag and artifact rules
-        run: node --test scripts/release/release.test.mjs
+        run: node --test scripts/release/release.test.mjs scripts/simulation/build.test.mjs
 
   server:
     runs-on: ubuntu-latest

@@ -25,6 +25,7 @@ const DICT: Record<string, Entry> = {
   'windows.microphone.restricted': { 'zh-CN': '已被系统限制', en: 'Restricted by the system' },
   'windows.microphone.not-determined': { 'zh-CN': '尚未确认', en: 'Not yet confirmed' },
   'windows.microphone.unknown': { 'zh-CN': '尚未确认', en: 'Unknown' },
+  'windows.microphone.not-required': { 'zh-CN': '无需麦克风', en: 'Not required' },
   'windows.checkError': { 'zh-CN': '检查失败', en: 'Check failed' },
   'windows.checking': { 'zh-CN': '检查中…', en: 'Checking…' },
   'windows.recheck': { 'zh-CN': '重新检查', en: 'Check again' },

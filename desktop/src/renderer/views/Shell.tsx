@@ -9,6 +9,7 @@ import { HomeView } from './HomeView';
 import { HistoryView } from './HistoryView';
 import { DictionaryView } from './DictionaryView';
 import { SettingsView } from './SettingsView';
+import { ProductBanner } from '../product/ProductBanner';
 
 export type Route = 'home' | 'history' | 'dictionary' | 'settings';
 
@@ -28,7 +29,7 @@ export const Shell = observer(function Shell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     if (!auth.permissionsGuidePending || !ui.appInfo) return;
-    if (ui.appInfo.platform === 'win32' && ui.appInfo.microphone.status !== 'granted') setSettingsOpen(true);
+    if (ui.appInfo.platform === 'win32' && !['granted', 'not-required'].includes(ui.appInfo.microphone.status)) setSettingsOpen(true);
     runInAction(() => { auth.permissionsGuidePending = false; });
   }, [auth.permissionsGuidePending, ui.appInfo]);
 
@@ -121,6 +122,7 @@ export const Shell = observer(function Shell() {
 
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="drag-region h-[36px] shrink-0" />
+        <ProductBanner />
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
           {route === 'home' && <HomeView onNavigate={navigate} />}
           {route === 'history' && <HistoryView onNavigate={navigate} />}

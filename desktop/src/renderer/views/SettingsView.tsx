@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { AppInfo } from '@shared/types';
 import { API_BASE_URL } from '@shared/config';
+import { presentation } from '@product/presentation';
 import { stores } from '../stores';
 import { RetentionControl } from '../components/RetentionControl';
 import { errorMessage } from '../lib/error-message';
@@ -167,7 +168,7 @@ export function SettingsServiceHealth({ locale, apiBaseUrl, health, checking, on
   const dateLocale = locale === 'en' ? 'en-US' : 'zh-CN';
   return (
     <Group title={tr(locale, 'settings.health.group')} icon={<Activity size={15} />}>
-      <Row label={tr(locale, 'settings.health.label')} hint={tr(locale, 'settings.health.hint')}>
+      <Row label={presentation.serviceLabel ?? tr(locale, 'settings.health.label')} hint={presentation.serviceHint ?? tr(locale, 'settings.health.hint')}>
         <div className="flex items-center gap-2">
           <span role="status" className={`pill ${healthTone}`}>
             {tr(locale, `settings.health.${healthStatus}`)}
@@ -481,12 +482,12 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                 </Group>
 
                 <Group title={tr(locale, 'settings.permissions.group')} icon={<Accessibility size={15} />}>
-                  <Row label={tr(locale, 'windows.microphone.label')} hint={tr(locale, isWindows ? 'windows.microphone.hint' : 'windows.microphone.macHint')}>
+                  <Row label={tr(locale, 'windows.microphone.label')} hint={presentation.microphoneHint ?? tr(locale, isWindows ? 'windows.microphone.hint' : 'windows.microphone.macHint')}>
                     <div className="flex max-w-[290px] flex-wrap justify-end gap-2">
-                      <span className={`pill ${info?.microphone.status === 'granted' ? 'accent' : 'warn'}`} role="status">{tr(locale, platformChecking ? 'windows.checking' : info?.microphone.error ? 'windows.checkError'
+                      <span className={`pill ${['granted', 'not-required'].includes(info?.microphone.status ?? '') ? 'accent' : 'warn'}`} role="status">{tr(locale, platformChecking ? 'windows.checking' : info?.microphone.error ? 'windows.checkError'
                         : `windows.microphone.${info?.microphone.status ?? 'unknown'}`)}</span>
                       <button className="btn-ghost" disabled={platformChecking} onClick={() => { setPlatformChecking(true); refreshInfo.current(); }}>{tr(locale, 'windows.recheck')}</button>
-                      <button className="btn-secondary" onClick={() => void openSystem(rpc.app.openMicrophoneSettings)}>{tr(locale, 'windows.microphone.open')}</button>
+                      {info?.microphone.status !== 'not-required' && <button className="btn-secondary" onClick={() => void openSystem(rpc.app.openMicrophoneSettings)}>{tr(locale, 'windows.microphone.open')}</button>}
                     </div>
                   </Row>
                   {isWindows && <Row label={tr(locale, 'windows.input.label')} hint={tr(locale, 'windows.input.hint')}><span className="pill">{tr(locale, info?.nativeInputSupported ? 'windows.input.ordinary' : 'windows.input.unavailable')}</span></Row>}
@@ -576,7 +577,7 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                   <div className="col-span-2 flex items-center gap-2 rounded-lg bg-[var(--surface-strong)] px-3 py-2 text-[var(--text-3)]">
                     {tr(locale, 'settings.about.server')}
                     <span className="ml-auto font-mono text-[12px] text-[var(--text)]">
-                      {info?.apiBaseUrl ?? API_BASE_URL}
+                      {presentation.serviceAddress ?? info?.apiBaseUrl ?? API_BASE_URL}
                     </span>
                   </div>
                   {info?.platform === 'darwin' && <div className="col-span-2 flex items-center gap-2 rounded-lg bg-[var(--surface-strong)] px-3 py-2 text-[var(--text-3)]">
@@ -598,12 +599,14 @@ export const SettingsView = observer(function SettingsView({ onClose }: { onClos
                   label={tr(locale, info?.platform === 'darwin' ? 'settings.help.permissions.title' : 'windows.input.label')}
                   hint={tr(locale, info?.platform === 'darwin' ? 'settings.help.permissions.hint' : 'windows.input.hint')}
                 >
-                  <button
+                  {info?.microphone.status === 'not-required' && info?.platform !== 'darwin'
+                    ? <span className="pill">{tr(locale, 'windows.microphone.not-required')}</span>
+                    : <button
                     className="btn-secondary"
                     onClick={() => void openSystem(info?.platform === 'darwin' ? rpc.app.openAccessibilitySettings : rpc.app.openMicrophoneSettings)}
                   >
                     {tr(locale, info?.platform === 'darwin' ? 'settings.permissions.open' : 'windows.microphone.open')} <ExternalLink size={12} />
-                  </button>
+                  </button>}
                 </Row>
                 <Row
                   label={tr(locale, 'settings.help.shortcut.title')}

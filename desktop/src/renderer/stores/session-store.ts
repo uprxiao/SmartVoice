@@ -4,7 +4,8 @@ import type { InsertionOutcome, SessionProgress, SessionState } from '@shared/ty
 import { errorMessage } from '../lib/error-message';
 import { events, rpc } from '../lib/ipc';
 import { tr, type Locale } from '../lib/i18n';
-import { PcmRecorder, RecorderError } from '../audio/recorder';
+import { CaptureSource } from '@product/capture';
+import { RecorderError } from '../audio/recorder-contract';
 import type { AuthStore } from './auth-store';
 import type { UiStore } from './ui-store';
 
@@ -30,7 +31,7 @@ export class SessionStore {
   error: string | null = null;
   outcome: InsertionOutcome | null = null;
   historySelection: HistorySelectionState | null = null;
-  private readonly recorder = new PcmRecorder();
+  private readonly recorder = new CaptureSource();
   private initialized = false;
   private generation = 0;
   // Events belong to the local operation that adopted this session. A cancel

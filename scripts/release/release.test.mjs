@@ -177,6 +177,17 @@ test('dirty builds and missing assets block publication', (t) => {
   );
 });
 
+test('simulation assets are rejected even if renamed to normal release filenames', (t) => {
+  const dir = artifactsFixture(t);
+  const file = join(dir, manifestName(targets[2]));
+  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({ ...manifest, flavor: 'windows-simulation' }));
+  assert.throws(
+    () => verifyArtifacts(dir, '0.0.1', 'commit-a', releasePolicy({ channel: 'preview' })),
+    /provenance/
+  );
+});
+
 test('preview permits unsigned assets while stable still requires signing', (t) => {
   assert.throws(() => releasePolicy({}), /channel/);
   assert.throws(() => releasePolicy({ channel: 'unknown' }), /channel/);

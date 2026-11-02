@@ -26,6 +26,7 @@ import { selectElectronRuntime } from './electron-runtime.mjs';
 import { parseVersion } from './version.mjs';
 import { verifyMacAppIdentity } from './mac-identity.mjs';
 import { serviceBuildConfig, serviceBuildEnvironment, verifyServiceBuildOutput } from './service-config.mjs';
+import { verifyBuildOutput, verifyNormalArchive } from '../simulation/verify-build.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -162,6 +163,7 @@ runBin('electron-vite', 'electron-vite', ['build'], {
   stdio: 'inherit',
 });
 verifyServiceBuildOutput(desktopDir, service);
+verifyBuildOutput('normal', join(desktopDir, 'out'));
 runBin(
   'electron-builder',
   'electron-builder',
@@ -179,11 +181,16 @@ runBin(
   { cwd: desktopDir, env, stdio: 'inherit' }
 );
 
+if (target.platform === 'win') {
+  verifyNormalArchive(join(packageDir, 'win-unpacked/resources/app.asar'), version);
+}
+
 if (values.dir) {
   if (target.platform === 'mac') {
     const candidates = readdirSync(packageDir).map(name => join(packageDir, name, 'SmartVoiceInput.app'))
       .filter(file => existsSync(file));
     if (candidates.length !== 1) throw new Error('Expected exactly one unpacked macOS app');
+    verifyNormalArchive(join(candidates[0], 'Contents/Resources/app.asar'), version);
     verifyMacAppIdentity(candidates[0]);
   }
   console.log(`Unpacked application written to ${packageDir}`);
@@ -241,6 +248,7 @@ function verifyMacDmg(file, expectedVersion, requireSigning) {
       throw new Error(`Unexpected app bundle in DMG: ${apps.join(', ')}`);
     }
     const appDir = join(mount, apps[0]);
+    verifyNormalArchive(join(appDir, 'Contents/Resources/app.asar'), expectedVersion);
     const plist = join(appDir, 'Contents', 'Info.plist');
     const installedVersion = run(
       'plutil',

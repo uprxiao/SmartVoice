@@ -24,6 +24,10 @@ on:
         description: Add actual Main shortcut persistence and renderer crash recovery checks
         type: boolean
         default: false
+      simulation_only:
+        description: Build the temporary Windows package with synthetic capture and test actual insertion
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       full_matrix:
@@ -39,6 +43,9 @@ on:
         type: string
         default: standard
       expanded_ui:
+        type: boolean
+        default: false
+      simulation_only:
         type: boolean
         default: false
       require_mac_signing:
@@ -65,20 +72,24 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   windows-probes:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only && !inputs.remaining_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only && !inputs.remaining_only && !inputs.simulation_only
     uses: ./.github/workflows/windows-verify.yml
     with:
       expanded_ui: ${{ inputs.expanded_ui }}
 
   windows-credentials:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.credential_controls_only && !inputs.remaining_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.credential_controls_only && !inputs.remaining_only && !inputs.simulation_only
     uses: ./.github/workflows/windows-credentials.yml
 
   windows-remaining:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.remaining_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && inputs.remaining_only && !inputs.simulation_only
     uses: ./.github/workflows/windows-remaining.yml
     with:
       suite: ${{ inputs.remaining_suite }}
+
+  windows-simulation:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/feature/0.0.2' && !inputs.full_matrix && !inputs.credential_controls_only && !inputs.remaining_only && inputs.simulation_only
+    uses: ./.github/workflows/windows-simulation.yml
 
   package:
     if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/feature/0.0.2' || inputs.full_matrix

@@ -20,7 +20,7 @@ afterEach(() => vi.unstubAllGlobals());
 beforeEach(()=>{
   vi.stubGlobal('localStorage',{getItem:()=>null});f.nullReads=0;f.locale='zh-CN';f.section='settings';
   f.info={version:'0.0.2',electron:'42',platform:'win32',accessibilityTrusted:false,accessibilitySupported:false,
-    nativeInputSupported:true,correctionObservationSupported:false,microphone:{status:'denied',error:false},
+    buildFlavor:'normal',nativeInputSupported:true,correctionObservationSupported:false,microphone:{status:'denied',error:false},
     autoStart:{supported:true,configurable:true,registered:false,enabled:false,systemDisabled:false,error:false},apiBaseUrl:'http://127.0.0.1:17863',shortcut:'Control+Shift+Space'};
 });
 function render(){f.nullReads=0;return renderToStaticMarkup(createElement(SettingsView,{onClose:()=>undefined}));}

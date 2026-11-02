@@ -15,7 +15,7 @@ export class WindowsTray {
     const tray = new Tray(icon);
     if (tray.isDestroyed()) throw new Error('TRAY_UNAVAILABLE');
     this.tray = tray;
-    tray.setToolTip('SmartVoiceInput');
+    tray.setToolTip(app.name);
     tray.on('double-click', () => { void this.show(); });
     this.refreshMenu();
   }
@@ -32,9 +32,9 @@ export class WindowsTray {
       this.prompting = true;
       const en = this.locale() === 'en';
       try {
-        await dialog.showMessageBox(win, { type: 'info', title: 'SmartVoiceInput',
-          message: en ? 'SmartVoiceInput keeps running in the background. Open or exit it from the tray icon.'
-            : 'SmartVoiceInput 仍在后台运行，可从托盘图标打开或退出。',
+        await dialog.showMessageBox(win, { type: 'info', title: app.name,
+          message: en ? `${app.name} keeps running in the background. Open or exit it from the tray icon.`
+            : `${app.name} 仍在后台运行，可从托盘图标打开或退出。`,
           buttons: [en ? 'Got it' : '知道了'], defaultId: 0, noLink: true });
         if (this.disposed || win.isDestroyed()) return;
         // Never mark acknowledged before the user has actually seen the notice.

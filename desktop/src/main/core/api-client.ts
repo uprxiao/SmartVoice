@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiUrl } from '@shared/config';
+import { configuredServiceEndpoint, endpointUrl, type ServiceEndpoint } from './service-endpoint';
 import type {
   AuthSnapshot,
   DictionaryPage,
@@ -89,7 +89,8 @@ export class ApiClient {
   constructor(
     private readonly tokens: TokenSink,
     private readonly device: DeviceIdentity,
-    private readonly onUnauthorized: () => void
+    private readonly onUnauthorized: () => void,
+    private readonly endpoint: ServiceEndpoint = configuredServiceEndpoint()
   ) {}
 
   setTokens(access: string, refresh: string, expiresInSeconds = 900): void {
@@ -145,7 +146,10 @@ export class ApiClient {
     if (accountBound) this.activeRequests.add(controller);
     const timer = setTimeout(abort, 15_000);
     try {
-      const response = await fetch(url, { ...init, signal: controller.signal, redirect: 'error' });
+      const headers = this.endpoint.headers
+        ? { ...Object.fromEntries(new Headers(init.headers)), ...this.endpoint.headers }
+        : init.headers;
+      const response = await fetch(url, { ...init, headers, signal: controller.signal, redirect: 'error' });
       const body = response.status === 204 ? null : await response.arrayBuffer();
       if (controller.signal.aborted) throw new Error('请求已取消或超时');
       return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
@@ -196,7 +200,7 @@ export class ApiClient {
     const finalHeaders: Record<string, string> = { ...headers };
     if (body !== undefined) finalHeaders['Content-Type'] = 'application/json';
     if (this.accessToken) finalHeaders['Authorization'] = `Bearer ${this.accessToken}`;
-    const response = await this.fetchBounded(apiUrl(path), {
+    const response = await this.fetchBounded(endpointUrl(this.endpoint, path), {
       method,
       headers: finalHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -224,7 +228,7 @@ export class ApiClient {
     if (!refresh) return false;
     const operation = (async () => {
       try {
-        const response = await this.fetchBounded(apiUrl('/api/auth/refresh'), {
+        const response = await this.fetchBounded(endpointUrl(this.endpoint, '/api/auth/refresh'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: refresh }),
@@ -301,14 +305,14 @@ export class ApiClient {
   }
 
   private async revokeFrozenSession(access: string, refresh: string | null): Promise<void> {
-    const revoke = (token: string) => this.fetchBounded(apiUrl('/api/auth/logout'), {
+    const revoke = (token: string) => this.fetchBounded(endpointUrl(this.endpoint, '/api/auth/logout'), {
       method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}',
     }, undefined, false);
     let response = await revoke(access);
     if (response.status === 401 && refresh) {
       // An expired access token cannot revoke its sid. Renew the FROZEN old
       // session once solely for revocation; never setTokens or touch a new login.
-      const fresh = await this.fetchBounded(apiUrl('/api/auth/refresh'), {
+      const fresh = await this.fetchBounded(endpointUrl(this.endpoint, '/api/auth/refresh'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refresh }),
       }, undefined, false);
@@ -516,7 +520,7 @@ export class ApiClient {
       this.assertEpoch(epoch);
       const form = new FormData();
       form.append('file', file, filename);
-      const response = await this.fetchBounded(apiUrl('/api/v1/dictionary/import'), {
+      const response = await this.fetchBounded(endpointUrl(this.endpoint, '/api/v1/dictionary/import'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, 'Idempotency-Key': idempotencyKey },
         body: form,
@@ -535,6 +539,13 @@ export class ApiClient {
   }
 
   get baseUrl(): string {
-    return API_BASE_URL;
+    return this.endpoint.origin;
+  }
+
+  get storageIdentity(): string { return this.endpoint.storageIdentity; }
+
+  audioSocket(path: string): { url: string; headers: Record<string, string> } {
+    return { url: endpointUrl(this.endpoint, path, true),
+      headers: { ...this.endpoint.headers, Authorization: `Bearer ${this.accessToken ?? ''}` } };
   }
 }

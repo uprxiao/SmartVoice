@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, powerMonitor, screen, shell } from 'electron';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { API_BASE_URL, SERVICE_CA_SHA256 } from '@shared/config';
-import { installServiceTrust } from './core/service-trust';
+import { product } from '@product/identity';
+import { startProductService } from '@product/service';
+import { configureProductProfile } from './product/profile';
 import {
   dictationLevelEvent,
   hotkeyToggleEvent,
@@ -24,7 +25,6 @@ import { HudVisibility } from './app/hud-visibility';
 import { HudPosition, inputRectangle } from './app/hud-position';
 import { WindowsTray } from './app/windows-tray';
 import { inputGeometryToDip } from '../../native/input-geometry';
-import { configureWindowsAppIdentity } from '../../native/system-settings';
 import {
   createHudWindow,
   createMainWindow,
@@ -46,9 +46,7 @@ import { InsertionJournal } from './core/insertion-journal';
 import { createRpcRouter } from './rpc';
 import { createRendererRpcAuthorizer } from './rpc-authorization';
 
-app.setName('SmartVoiceInput');
-configureWindowsAppIdentity();
-if (process.env.SVI_USER_DATA) app.setPath('userData', process.env.SVI_USER_DATA);
+configureProductProfile();
 
 const credentialBootstrap = isCredentialBootstrap();
 const gotLock = !credentialBootstrap && app.requestSingleInstanceLock();
@@ -86,7 +84,7 @@ async function main(): Promise<void> {
   };
   debug('waiting-for-ready');
   await app.whenReady();
-  installServiceTrust(resolveAppResource('service-ca.crt'), SERVICE_CA_SHA256);
+  const service = await startProductService(app.getPath('userData'));
   debug('ready');
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(resolveAppResource('icon.png'));
@@ -95,7 +93,7 @@ async function main(): Promise<void> {
   buildAppMenu();
   debug('menu');
 
-  const serverIdentity = new URL(API_BASE_URL).href;
+  const serverIdentity = service.endpoint.storageIdentity;
   const serverKey = createHash('sha256').update(serverIdentity).digest('hex');
   const tokens = new TokenStore(credentialCipher(credentialStorageReady), app.getPath('userData'), serverIdentity);
   const device = tokens.device(app.getVersion());
@@ -132,7 +130,7 @@ async function main(): Promise<void> {
   // macOS shows its own Accessibility prompt at most once per app process after sign-in.
   let accessibilityPrompted = false;
   debug('native');
-  api = new ApiClient(tokens, device, () => auth.invalidate());
+  api = new ApiClient(tokens, device, () => auth.invalidate(), service.endpoint);
   auth = new AuthService(api, tokens, () => {
     const nextId = auth.current?.user.id ?? null;
     if (nextId !== accountId) {
@@ -253,7 +251,7 @@ async function main(): Promise<void> {
       win.show(); win.focus();
       tray?.refreshMenu();
     } catch {
-      if (!quitting) await dialog.showMessageBox({ type: 'error', title: 'SmartVoiceInput',
+      if (!quitting) await dialog.showMessageBox({ type: 'error', title: product.productName,
         message: auth.current?.settings.locale === 'en' ? 'Could not open the main window. Try again from the tray or exit the app.' : '无法打开主窗口，请从托盘重试或退出应用。' });
     }
   };
@@ -261,7 +259,7 @@ async function main(): Promise<void> {
     try { tray = new WindowsTray(resolveAppResource('icon.png'), showMain, () => auth.current?.settings.locale ?? 'zh-CN'); }
     catch {
       // Initial window remains visible and the application menu has an Exit command.
-      void dialog.showMessageBox({ type: 'error', title: 'SmartVoiceInput', message: auth.current?.settings.locale === 'en'
+      void dialog.showMessageBox({ type: 'error', title: product.productName, message: auth.current?.settings.locale === 'en'
         ? 'The tray could not be created. Keep the window open or exit from the application menu.'
         : '托盘创建失败，请保留主窗口，或从应用菜单退出。' });
     }
@@ -293,6 +291,7 @@ async function main(): Promise<void> {
     sessionService.dispose();
     native.dispose();
     hudNative.dispose();
+    void service.close();
   });
 }
 

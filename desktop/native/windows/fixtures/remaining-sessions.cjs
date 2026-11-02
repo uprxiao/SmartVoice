@@ -81,7 +81,7 @@ module.exports=async function(api,root,folder,track){
       if(['insert','insertCurrent'].includes(action))s.writeRequestId=s.native.seq;
       if(child&&!s.children.includes(child)){s.children.push(child);track(child);}return response;
      };
-     const http={accessTokenValue:'fixture-only-no-secret',ensureFreshAccess:async()=>{
+     const http={accessTokenValue:'fixture-only-no-secret',storageIdentity:api.WS_BASE_URL.replace(/^ws:/,'http:'),audioSocket:path=>({url:api.WS_BASE_URL+path,headers:{Authorization:'Bearer fixture-only-no-secret'}}),ensureFreshAccess:async()=>{
       if(s.stage==='prepare'&&!s.gateUsed){s.gateUsed=true;s.signal='prepare';await s.gate.promise;}
      },createSession:async()=>session(),cancelSession:async()=>({...session(),state:'cancelled'}),getSession:async()=>session(),
       claimInsertion:async(sid,body)=>{

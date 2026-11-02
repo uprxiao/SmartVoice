@@ -20,6 +20,7 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "electron.vite.config.ts",
+    "electron.vite.simulation.config.ts",
     "vitest.config.ts"
   ]
 }

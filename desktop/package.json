@@ -16,12 +16,15 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:simulation": "electron-vite build --config electron.vite.simulation.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "predev": "node scripts/build-voice-helper.mjs",
     "prebuild": "node scripts/build-voice-helper.mjs",
     "package": "node ../scripts/release/build.mjs --dir",
     "package:release": "node ../scripts/release/build.mjs",
+    "package:simulation": "node ../scripts/simulation/build-windows.mjs",
+    "test:simulation-build": "node --test ../scripts/simulation/build.test.mjs",
     "test:release": "node --test ../scripts/release/release.test.mjs",
     "release:next": "node ../scripts/release/version.mjs",
     "release:check": "node ../scripts/release/metadata.mjs"

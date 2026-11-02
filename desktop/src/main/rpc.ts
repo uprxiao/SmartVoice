@@ -1,4 +1,4 @@
-import { app, dialog, shell, systemPreferences } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { open } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,9 @@ import type { NativeVoiceInput } from './core/native-input';
 import type { SessionService } from './core/session-service';
 import type { ShortcutService } from './core/shortcut-service';
 import type { HudNotice } from '@shared/events';
-import { autoStartInfo, microphoneInfo, openMicrophoneSettings, openStartupSettings, updateAutoStart } from '../../native/system-settings';
+import { autoStartInfo, openStartupSettings, updateAutoStart } from '../../native/system-settings';
+import { microphoneInfo, openMicrophoneSettings, prepareCaptureAccess } from '@product/capture-access';
+import { product } from '@product/identity';
 
 export interface RpcDeps {
   api: ApiClient;
@@ -45,6 +47,7 @@ export function createRpcRouter(deps: RpcDeps) {
           trusted = false;
         }
         return {
+          buildFlavor: product.flavor,
           version: app.getVersion(),
           electron: process.versions.electron,
           platform: process.platform,
@@ -121,23 +124,8 @@ export function createRpcRouter(deps: RpcDeps) {
         try {
           // An OS permission prompt has no audio to upload. Do not create a
           // server session (and spend its audio-idle budget) while it is open.
-          if (process.platform === 'darwin' || process.platform === 'win32') {
-            const microphoneStatus = () => {
-              try { return systemPreferences.getMediaAccessStatus('microphone'); }
-              catch { throw new Error('MICROPHONE_PERMISSION_UNAVAILABLE'); }
-            };
-            let status = microphoneStatus();
-            if (status === 'not-determined' && process.platform === 'darwin') {
-              let granted: boolean;
-              try { granted = await systemPreferences.askForMediaAccess('microphone'); }
-              catch { throw new Error('MICROPHONE_PERMISSION_UNAVAILABLE'); }
-              if (activeStart !== binding || !sameAccount(binding.userId, binding.authVersion)) throw new Error('录音操作已取消');
-              if (!granted) throw new Error('MICROPHONE_PERMISSION_DENIED');
-              status = microphoneStatus();
-            }
-            if (status === 'denied' || status === 'restricted') throw new Error('MICROPHONE_PERMISSION_DENIED');
-            if (status !== 'granted') throw new Error('MICROPHONE_PERMISSION_UNAVAILABLE');
-          }
+          const access = prepareCaptureAccess(() => activeStart === binding && sameAccount(binding.userId, binding.authVersion));
+          if (access) await access;
           if (activeStart !== binding || !sameAccount(binding.userId, binding.authVersion)) throw new Error('录音操作已取消');
           if (deps.sessions.isBusy()) throw new Error('已有进行中的语音会话');
           deps.notifyHud?.(null);

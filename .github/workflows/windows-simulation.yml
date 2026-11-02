@@ -1,0 +1,102 @@
+name: Windows simulation installer checks
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  simulation:
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set owned build directories
+        shell: pwsh
+        run: |
+          "CARGO_TARGET_DIR=$env:RUNNER_TEMP/svi-rust-target" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_SIMULATION_PACKAGE=$env:RUNNER_TEMP/svi-simulation-package" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_NORMAL_CONTROL=$env:RUNNER_TEMP/svi-normal-control" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "SVI_SIMULATION_EVIDENCE=$env:RUNNER_TEMP/svi-simulation-evidence" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/svi-rust-target
+          key: ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-svi-probe-${{ hashFiles('desktop/native/windows/Cargo.lock') }}-
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install locked desktop dependencies
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/electron/install.js
+          exit $LASTEXITCODE
+      - name: Check types before tests
+        working-directory: desktop
+        run: pnpm typecheck
+      - name: Run desktop and artifact boundary tests
+        shell: pwsh
+        run: |
+          pnpm --dir desktop test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/release/release.test.mjs scripts/simulation/build.test.mjs
+          exit $LASTEXITCODE
+      - name: Compile independent Windows observers
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path desktop/native/windows/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release --manifest-path desktop/native/windows/Cargo.toml --bin verify --bin svi-windows-probe
+          exit $LASTEXITCODE
+      - name: Validate smoke scripts
+        shell: pwsh
+        run: |
+          $tokens = $null; $parseErrors = $null
+          $null = [Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'desktop/native/windows/scripts/simulation-smoke.ps1'), [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          node --check desktop/native/windows/scripts/simulation-ui.cjs
+          exit $LASTEXITCODE
+      - name: Build and install normal coexistence control
+        shell: pwsh
+        run: node scripts/release/build.mjs --platform win --arch x64 --output-dir $env:SVI_NORMAL_CONTROL
+      - name: Build and install isolated simulation package
+        shell: pwsh
+        run: node scripts/simulation/build-windows.mjs --output-dir $env:SVI_SIMULATION_PACKAGE
+      - name: Exercise installed product with real global shortcuts and native insertion
+        shell: pwsh
+        run: ./desktop/native/windows/scripts/simulation-smoke.ps1 -PackageDir $env:SVI_SIMULATION_PACKAGE -EvidenceDir $env:SVI_SIMULATION_EVIDENCE -NormalPackageDir $env:SVI_NORMAL_CONTROL
+      - name: Upload verified temporary test installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartvoiceinput-windows-simulation-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/svi-simulation-package/SmartVoiceInput-Simulation-*-win-x64.exe
+            ${{ runner.temp }}/svi-simulation-package/manifest-windows-simulation.json
+            ${{ runner.temp }}/svi-simulation-package/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve anonymous outcomes including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-simulation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/svi-simulation-evidence/summary.json
+            ${{ runner.temp }}/svi-simulation-evidence/ui-exercise.json
+            ${{ runner.temp }}/svi-simulation-evidence/ui-resume.json
+            ${{ runner.temp }}/svi-simulation-evidence/ui-normal-configure.json
+            ${{ runner.temp }}/svi-simulation-evidence/ui-normal-quit.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -39,6 +39,28 @@
 
 Windows x64 原生 CI 构建 NSIS、实际安装及运行。使用实际全局快捷键和真实 helper，独立读回外部目标全文、UTF-16 光标、选区和回执；不能以调用业务 toggle 或仅看 SendInput 返回值代替。打包后读回 appId、profile、自启项、helper、manifest、SHA256 和模拟标识；正常包并存和卸载隔离单独验证。
 
+开发检查使用 `desktop` 中的 `pnpm typecheck`、`pnpm test`。正常构建与 `pnpm build:simulation` 在同一工作目录顺序执行；electron-vite 的配置编译缓存不能在两个构建之间并行共享。Windows x64 用 `pnpm package:simulation` 生成独立 NSIS；其他系统明确拒绝此打包入口。`scripts/simulation/verify-build.mjs` 同时核对构建模块图与实际 ASAR，检查模拟包不含音频设备 API、正常包不含模拟能力。安装包 manifest 带 flavor、源码、身份、Electron 输入和资源摘要；模拟 flavor 无法进入正式发布校验。
+
+CI 由 `build.yml` 的 `simulation_only` 入口调用 `windows-simulation.yml`，只上传门禁全部成功后的测试 artifact，不创建 tag 或 Release。实际安装的正常包作为并存对照。匿名证据只包含 `summary.json` 及四份显式列出的 UI 报告，私有工作目录中的凭据、模拟状态、进程清单和浏览器 profile 不上传。
+
+## 安装后的测试方式
+
+安装名称为 SmartVoiceInput Simulation，可与正常版分开卸载。用公开虚构账号 `tester@example.test`、密码 `Simulation123!` 登录本机模拟服务。若正常版已占用默认快捷键，先退出正常版或在设置中选择不冲突的组合。
+
+将光标放进记事本、Chrome 或微信的可编辑输入框。按默认 `Ctrl+Shift+Space` 开始，确认胶囊显示“模拟”；再次按下后，固定句通过正常插入链填入当前前台输入位置。它不自动回车或发送。在已有文字、选区和空输入框分别核对结果；开始后切换目标，再结束，核对写入结束后实际执行时的最新位置。微信需用户实际安装并逐项验证，不由记事本或 Chrome 的结果推断。
+
+登录页与主窗持续显示模拟标识。历史和统计来自本机模拟会话，不同步生产账号。用户完成本轮验证后再移除临时实现；已安装包、用户数据和历史资产的清理需要单独明确范围。
+
 ## 临时实现移除
 
 移除清单随实现登记，至少包含模拟产品装配目录、合成源与本机服务、专用 Vite/Builder 配置、模拟构建脚本、模拟 CI 入口及状态标记。不能直接按字面批量删除共享文件。确认本轮验收完成后，逐项核对真实引用再移除临时部分，收回仅为模拟添加的接缝；正常身份、真实采集与正式插入链继续回归。当前不提前删除用户尚未使用的验收版本。
+
+| 范围 | 验后移除或收回的内容 |
+|---|---|
+| 独立运行模块 | `desktop/src/main/simulation/`、`desktop/src/renderer/simulation/` 及其中专用测试 |
+| 专用构建与检查 | `desktop/electron.vite.simulation.config.ts`、`desktop/electron-builder.simulation.config.cjs`、`scripts/simulation/`、`windows-simulation.yml`、`build.yml` 的模拟入口、`package.json` 的模拟命令与 `.gitignore` 对应输出 |
+| 专用 Windows 驱动 | `simulation-smoke.ps1`、`simulation-ui.cjs`、`simulation-shortcut.cs` |
+| 产品装配 | 先恢复正常引用，再核对 `desktop/build/{products.cjs,product-config.ts,vite-config.ts}`、`src/{main,renderer}/product/`、`src/shared/product.d.ts`、Vite/Vitest/TypeScript 配置；不能直接删除仍被正常版引用的文件 |
+| 正式源码接缝 | 逐项复核 ApiClient 端点与 WS 地址、SessionService 服务身份、Main 启停、RPC 采集权限、录音 contract、Renderer 采集源、banner/提示、`buildFlavor`/`not-required` 及相关测试；先迁移调用再收回临时部分 |
+| 通用正常行为 | Windows NSIS 使用自身 `APP_ID` 清理启动项、窗口与托盘采用实际产品名可以保留；正式 native helper、claim、journal、回执和插入逻辑本批未另造分支 |
+| 记录与资产 | 原需求、用例、失败与结果记录保留；已交付安装包及本机用户数据不随源码移除而自动删除 |

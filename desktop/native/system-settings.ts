@@ -1,10 +1,11 @@
 import { app, shell, systemPreferences } from 'electron';
 import { win32 } from 'node:path';
 import type { AppInfo, AutoStartInfo } from '../src/shared/types';
+import { product } from '@product/identity';
 
 // Match electron-builder's appId and set this identity before any login-item RPC.
 // Electron's exact command-line comparison looks up the AppUserModelID entry.
-const ENTRY = 'com.smartvoiceinput.desktop';
+const ENTRY = product.appId;
 const ARGS = ['--background'];
 export function configureWindowsAppIdentity(): void {
   if (process.platform === 'win32') app.setAppUserModelId(ENTRY);

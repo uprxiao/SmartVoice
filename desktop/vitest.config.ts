@@ -1,14 +1,8 @@
-import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { productAliases, productIdentityPlugin } from './build/product-config';
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@root': resolve('.'),
-      '@shared': resolve('src/shared'),
-      '@main': resolve('src/main'),
-      '@renderer': resolve('src/renderer'),
-    },
-  },
+  plugins: [productIdentityPlugin('normal')],
+  resolve: { alias: productAliases('normal') },
   test: { include: ['src/**/*.test.ts'], environment: 'node' },
 });

@@ -9,6 +9,7 @@ import type { AuthService } from './auth-service';
 import { NativeCallError, type NativeVoiceInput } from './native-input';
 import { InsertionJournal } from './insertion-journal';
 import { SessionService } from './session-service';
+import { configuredServiceEndpoint, endpointUrl } from './service-endpoint';
 
 const doubles = vi.hoisted(() => ({ sockets: [] as unknown[], now: 100_000 }));
 vi.mock('node:perf_hooks', () => ({ performance: { timeOrigin: 0, now: () => doubles.now } }));
@@ -59,6 +60,8 @@ function fixture() {
   const journal = new InsertionJournal(directory);
   let snapshot = { user: { id: USER }, settings: { learning_enabled: false } } as AuthSnapshot | null;
   const api = {
+    storageIdentity: configuredServiceEndpoint().storageIdentity,
+    audioSocket: (path: string) => ({ url: endpointUrl(configuredServiceEndpoint(), path, true), headers: { Authorization: 'Bearer test-token' } }),
     accessTokenValue: 'test-token', ensureFreshAccess: vi.fn(async () => undefined),
     createSession: vi.fn(async () => session()), getSession: vi.fn(async () => session()),
     cancelSession: vi.fn(async () => session({ state: 'cancelled' })), clearTokens: vi.fn(),

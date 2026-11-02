@@ -1,5 +1,6 @@
 import type { HudNotice } from '@shared/events';
 import { hudFrame } from '@shared/hud-presentation';
+import { presentation } from '@product/presentation';
 
 interface Props {
   frame: ReturnType<typeof hudFrame>;
@@ -55,7 +56,7 @@ export function HudView({ frame, level, notice = null, locale = 'zh-CN', onCance
             </svg>
           </button>
           <div className="hud-wave" aria-hidden="true">
-            {Array.from({ length: 10 }, (_, index) => <span key={index}
+            {presentation.hudLabel ? <span style={{ width: 'auto', background: 'none', color: '#fff', fontSize: 11, whiteSpace: 'nowrap' }}>{presentation.hudLabel}</span> : Array.from({ length: 10 }, (_, index) => <span key={index}
               style={{ height: `${2 + energy * 16 * (0.45 + 0.55 * Math.abs(Math.sin(index * 0.9)))}px` }} />)}
           </div>
           <button className="hud-btn hud-confirm" aria-label={en ? 'Finish' : '完成录音'} onClick={onConfirm}>
@@ -66,7 +67,7 @@ export function HudView({ frame, level, notice = null, locale = 'zh-CN', onCance
         </>}
         {processing && <>
           <span className="hud-progress" aria-hidden="true" style={{ width: `${frame.fill}%` }} />
-          <span className="hud-loading">{en ? 'Processing' : '正在处理'}</span>
+          <span className="hud-loading">{presentation.hudLabel ?? (en ? 'Processing' : '正在处理')}</span>
         </>}
       </div>
     </div>

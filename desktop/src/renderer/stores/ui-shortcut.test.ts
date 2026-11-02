@@ -5,6 +5,7 @@ import { rpc } from '../lib/ipc';
 import { UiStore } from './ui-store';
 
 const info = (shortcut: string): AppInfo => ({
+  buildFlavor: 'normal',
   nativeInputSupported:true, correctionObservationSupported:true, microphone:{status:'granted',error:false},
   autoStart:{supported:false,configurable:false,registered:false,enabled:false,systemDisabled:false,error:false},
   shortcut, version: '0.0.1', electron: '42.11.15', platform: 'darwin',

@@ -1,11 +1,12 @@
 const path = require('node:path');
+const { normal } = require('./build/products.cjs');
 
 module.exports = {
   // Offline packaging uses the Electron distribution already installed in
   // node_modules instead of re-downloading from GitHub.
   ...(process.env.SVI_ELECTRON_DIST ? { electronDist: path.resolve(process.env.SVI_ELECTRON_DIST) } : {}),
-  appId: 'com.smartvoiceinput.desktop',
-  productName: 'SmartVoiceInput',
+  appId: normal.appId,
+  productName: normal.productName,
   directories: { output: 'release', buildResources: 'build' },
   files: ['out/**/*', 'package.json'],
   extraResources: [

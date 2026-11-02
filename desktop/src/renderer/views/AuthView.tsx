@@ -4,6 +4,8 @@ import { Loader2 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { API_BASE_URL } from '@shared/config';
 import { stores } from '../stores';
+import { presentation } from '@product/presentation';
+import { ProductBanner } from '../product/ProductBanner';
 
 export const AuthView = observer(function AuthView() {
   const { auth, ui } = stores;
@@ -31,6 +33,7 @@ export const AuthView = observer(function AuthView() {
   return (
     <div className="flex h-full w-full flex-col bg-[var(--bg)]">
       <div className="drag-region h-[38px] shrink-0 bg-[var(--bg-sidebar)]" />
+      <ProductBanner />
       <div className="flex min-h-0 flex-1">
         <div className="flex w-[460px] shrink-0 flex-col px-[64px] pb-10 pt-[64px]">
           <div className="mb-12 flex items-center gap-2.5">
@@ -42,9 +45,9 @@ export const AuthView = observer(function AuthView() {
             {mode === 'login' ? '欢迎回来' : '创建账号'}
           </h1>
           <p className="mt-2 text-[13px] leading-6 text-[var(--text-3)]">
-            {mode === 'login'
+            {presentation.authDescription ?? (mode === 'login'
               ? '登录后即可在任何输入框里，把语音变成整理好的文字。'
-              : '注册后自动登录。使用云端识别时，语音会发送到第三方云端识别服务；不会长期保存音频。'}
+              : '注册后自动登录。使用云端识别时，语音会发送到第三方云端识别服务；不会长期保存音频。')}
           </p>
 
           <div className="mt-8 flex rounded-lg bg-[var(--bg-sidebar)] p-[3px]">
@@ -77,7 +80,7 @@ export const AuthView = observer(function AuthView() {
                 autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@company.com"
+                placeholder={presentation.accountPlaceholder ?? 'you@company.com'}
                 required
               />
             </label>
@@ -121,7 +124,7 @@ export const AuthView = observer(function AuthView() {
           </form>
 
           <div className="mt-auto text-[11.5px] leading-5 text-[var(--text-disabled)]">
-            账号仅用于同步词库与记录；密码使用 Argon2id 存储，客户端只保存加密后的登录令牌。
+            {presentation.accountHint ?? '账号仅用于同步词库与记录；密码使用 Argon2id 存储，客户端只保存加密后的登录令牌。'}
           </div>
         </div>
 
@@ -129,17 +132,17 @@ export const AuthView = observer(function AuthView() {
           <div className="pointer-events-none absolute -right-24 -top-24 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(31,93,242,0.12),transparent_65%)]" />
           <div className="pointer-events-none absolute -bottom-32 left-10 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle,rgba(17,17,17,0.06),transparent_65%)]" />
           <div className="relative max-w-[430px]">
-            <div className="pill accent mb-6">本地内网 ASR · 可配置 LLM</div>
+            <div className="pill accent mb-6">{presentation.serviceLabel ?? '本地内网 ASR · 可配置 LLM'}</div>
             <h2 className="text-[30px] font-semibold leading-[1.28] tracking-[-0.6px]">
               把说出的话，
               <br />
               变成可直接发送的文字。
             </h2>
             <p className="mt-4 text-[13.5px] leading-7 text-[var(--text-3)]">
-              按一下快捷键开始录音，再按一下停止。SmartVoiceInput 会识别并整理文字，再填入结果返回时的当前输入框；需要确认时会保留结果供你检查或复制。
+              {presentation.authDescription ?? '按一下快捷键开始录音，再按一下停止。SmartVoiceInput 会识别并整理文字，再填入结果返回时的当前输入框；需要确认时会保留结果供你检查或复制。'}
             </p>
             <div className="mt-10 flex flex-col gap-5">
-              {[
+              {!presentation.banner && [
                 ['01', '流式识别', '250ms 音频分块持续上传，说完即可看到结果。'],
                 ['02', '忠实整理', '保留约束、数字与专名；不确定时回退原文并提示确认。'],
                 ['03', '越用越准', '局部词条修正会进入个人词库，下一次自动纠正。'],
@@ -157,8 +160,8 @@ export const AuthView = observer(function AuthView() {
             </div>
           </div>
           <div className="absolute bottom-8 left-[64px] right-[64px] flex items-center justify-between text-[11px] text-[var(--text-disabled)]">
-            <span>{ui.appInfo?.version ? `v${ui.appInfo.version}` : '—'} · 自托管服务</span>
-            <span>{API_BASE_URL.replace(/^https?:\/\//, '')}</span>
+            <span>{ui.appInfo?.version ? `v${ui.appInfo.version}` : '—'} · {presentation.serviceLabel ?? '自托管服务'}</span>
+            <span>{presentation.serviceAddress ?? API_BASE_URL.replace(/^https?:\/\//, '')}</span>
           </div>
         </div>
       </div>

@@ -31,6 +31,7 @@ export function writeManifest(
   if (size === 0) throw new Error(`Installer is empty: ${file}`);
   const manifest = {
     schemaVersion: 2,
+    flavor: 'normal',
     version,
     commit,
     platform: target.platform,
@@ -65,6 +66,7 @@ export function verifyArtifacts(
     const expected = installerName(version, target);
     if (
       manifest.schemaVersion !== 2 ||
+      (manifest.flavor !== undefined && manifest.flavor !== 'normal') ||
       manifest.version !== version ||
       manifest.commit !== commit ||
       manifest.platform !== target.platform ||

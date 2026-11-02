@@ -106,7 +106,7 @@ async function loadMainWindow(options: MainWindowOptions): Promise<BrowserWindow
     height: 750,
     minWidth: 900,
     minHeight: 620,
-    title: 'SmartVoiceInput',
+    title: app.name,
     icon: resolveAppResource('icon.png'),
     show: false,
     backgroundColor: '#ffffff',

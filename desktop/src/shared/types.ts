@@ -217,6 +217,7 @@ export interface AutoStartInfo {
   error: boolean;
 }
 export interface AppInfo {
+  buildFlavor: 'normal' | 'windows-simulation';
   version: string;
   electron: string;
   platform: NodeJS.Platform;
@@ -224,7 +225,7 @@ export interface AppInfo {
   accessibilitySupported: boolean;
   nativeInputSupported: boolean;
   correctionObservationSupported: boolean;
-  microphone: { status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'; error: boolean };
+  microphone: { status: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown' | 'not-required'; error: boolean };
   autoStart: AutoStartInfo;
   apiBaseUrl: string;
   shortcut: string;

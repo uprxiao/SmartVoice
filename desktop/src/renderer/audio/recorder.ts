@@ -1,12 +1,5 @@
-export interface RecorderCallbacks {
-  onChunk: (buffer: ArrayBuffer, capturedAtEpochMs: number) => void;
-  onLevel: (level: number) => void;
-  onLimit?: () => void;
-  onError?: (error: Error) => void;
-}
-export class RecorderError extends Error {
-  constructor(readonly code: string, message: string) { super(message); }
-}
+import { RecorderError, type RecorderCallbacks } from './recorder-contract';
+export { RecorderError, type RecorderCallbacks } from './recorder-contract';
 interface Capture {
   phase: 'starting' | 'recording' | 'flushing' | 'closed';
   callbacks: RecorderCallbacks;
