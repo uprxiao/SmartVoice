@@ -74,6 +74,16 @@ jobs:
       - name: Build and install isolated simulation package
         shell: pwsh
         run: node scripts/simulation/build-windows.mjs --output-dir $env:SVI_SIMULATION_PACKAGE
+      - name: Preserve installed build for diagnostics before runtime acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: unverified-windows-simulation-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/svi-simulation-package/SmartVoiceInput-Simulation-*-win-x64.exe
+            ${{ runner.temp }}/svi-simulation-package/manifest-windows-simulation.json
+            ${{ runner.temp }}/svi-simulation-package/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
       - name: Exercise installed product with real global shortcuts and native insertion
         shell: pwsh
         run: ./desktop/native/windows/scripts/simulation-smoke.ps1 -PackageDir $env:SVI_SIMULATION_PACKAGE -EvidenceDir $env:SVI_SIMULATION_EVIDENCE -NormalPackageDir $env:SVI_NORMAL_CONTROL

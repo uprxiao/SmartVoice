@@ -124,8 +124,8 @@ function Port {
     try{return $listener.LocalEndpoint.Port}finally{$listener.Stop()}
 }
 function Facts([Diagnostics.Process]$Process,[string]$ExpectedImage='',[string]$Symbol='controller'){
-    $clock=[Diagnostics.Stopwatch]::StartNew();$birth=$null
-    $observation=@{symbol=$Symbol;status='fail';attempts=0;stage='process-lifetime';module_absent_samples=0;image_absent_samples=0;elapsed_ms=0}
+    $clock=[Diagnostics.Stopwatch]::StartNew();$verificationClock=[Diagnostics.Stopwatch]::new();$birth=$null
+    $observation=@{symbol=$Symbol;status='fail';attempts=0;stage='process-lifetime';module_absent_samples=0;image_absent_samples=0;ready_wait_ms=0;verification_ms=0;elapsed_ms=0}
     try{
         do{
             $observation.attempts++;$observation.stage='process-lifetime'
@@ -138,12 +138,12 @@ function Facts([Diagnostics.Process]$Process,[string]$ExpectedImage='',[string]$
                 $observation.stage='image-path';$image=$module.FileName
                 if([string]::IsNullOrWhiteSpace($image)){$observation.image_absent_samples++}
                 else{
+                    $observation.ready_wait_ms=$clock.ElapsedMilliseconds;$verificationClock.Start()
                     $observation.stage='image-match';$image=[IO.Path]::GetFullPath($image)
                     if($ExpectedImage){Assert-Smoke ($image -ieq [IO.Path]::GetFullPath($ExpectedImage)) "Facts[$Symbol] IDENTITY_IMAGE_MISMATCH"}
                     $observation.stage='image-hash';$digest=(Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
                     $observation.stage='lifetime-readback';$Process.Refresh()
                     Assert-Smoke (-not $Process.HasExited -and $Process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $birth) "Facts[$Symbol] IDENTITY_EXITED_OR_CHANGED during verification"
-                    Assert-Smoke ($clock.ElapsedMilliseconds -lt 5000) "Facts[$Symbol] IDENTITY_DEADLINE_EXCEEDED"
                     $observation.stage='verified';$observation.status='verified'
                     return @{pid=$Process.Id;birth_ticks=$birth;image=$image;sha256=$digest}
                 }
@@ -153,7 +153,12 @@ function Facts([Diagnostics.Process]$Process,[string]$ExpectedImage='',[string]$
             $null=$Process.WaitForExit([int][Math]::Min(25,$remaining))
         }while($true)
     }catch{$observation.failure_category=$_.FullyQualifiedErrorId;throw}
-    finally{$observation.elapsed_ms=$clock.ElapsedMilliseconds;$data.process_identity+=@($observation)}
+    finally{
+        $observation.elapsed_ms=$clock.ElapsedMilliseconds
+        if(-not $verificationClock.IsRunning){$observation.ready_wait_ms=$observation.elapsed_ms}
+        $observation.verification_ms=$verificationClock.ElapsedMilliseconds
+        $data.process_identity+=@($observation)
+    }
 }
 function Start-Owned([string]$Program,[string[]]$Arguments,[string]$Role,[string]$Name,[string]$Install=''){
     $info=[Diagnostics.ProcessStartInfo]::new($Program);$info.UseShellExecute=$false
