@@ -27,7 +27,9 @@ export class AuthService {
     try {
       const stored = this.tokens.load();
       if (!stored) { this.publish(null); return null; }
-      this.api.setTokens(stored.access, stored.refresh);
+      // A restored access token has an unknown remaining lifetime. Treat it as expiring now so
+      // the first stream refreshes it instead of trusting 900 seconds from process start.
+      this.api.setTokens(stored.access, stored.refresh, 0);
       const snapshot = await this.api.me();
       this.assertEpoch(epoch);
       this.publish(snapshot);

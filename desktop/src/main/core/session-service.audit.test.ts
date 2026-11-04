@@ -428,7 +428,14 @@ describe('SessionService lifecycle and insertion boundaries', () => {
       && JSON.parse(call[0]).type === 'audio.end')).toBe(false);
   });
 
-  it.each([1, 1001])('rejects an uncalibrated capture timestamp %i ms in the future', async ahead => {
+  it.each([1, 50])('accepts a calibrated capture timestamp %i ms ahead within residual skew', async ahead => {
+    const f = fixture(), ws = await streaming(f);
+    f.service.sendAudio(new ArrayBuffer(8000), SESSION, doubles.now + ahead);
+    expect(f.service.current().error_code).toBeNull();
+    expect(sends(ws)).toHaveLength(1);
+  });
+
+  it.each([51, 1001])('rejects a capture timestamp %i ms beyond residual clock skew', async ahead => {
     const f = fixture();
     await streaming(f);
     f.service.sendAudio(new ArrayBuffer(8000), SESSION, doubles.now + ahead);

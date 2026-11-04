@@ -37,6 +37,13 @@ describe('main account publication boundaries (AUTH-16)', () => {
     await service.login('new@example.test', 'DemoPass123'); settings.resolve({...snapshot('old').settings, learning_enabled: false});
     await expect(pending).rejects.toBeInstanceOf(AuthContextChangedError); expect(service.current?.settings.learning_enabled).toBe(true);
   });
+  it('treats a restored access token lifetime as unknown until the first stream refresh', async () => {
+    const { api, tokens, service } = setup(); tokens.load.mockReturnValue({ access: 'a', refresh: 'r' });
+    api.me.mockResolvedValueOnce(snapshot('restored'));
+    await service.restore();
+    expect(api.setTokens).toHaveBeenCalledWith('a', 'r', 0);
+    expect(service.current?.user.id).toBe('restored');
+  });
   it('invalidating credentials prevents a pending restored snapshot from resurrecting them', async () => {
     const {api, tokens, service} = setup(); tokens.load.mockReturnValue({access: 'a', refresh: 'r'});
     const old = deferred<AuthSnapshot>(); api.me.mockReturnValueOnce(old.promise); const restore = service.restore();
