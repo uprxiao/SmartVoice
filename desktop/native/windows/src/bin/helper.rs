@@ -31,6 +31,15 @@ fn main() {
             std::process::exit(0);
         }
     });
+    if args.iter().any(|arg| arg == "--hud-hook") {
+        match svi_input_win::hud_hook::run() {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                eprintln!("HUD hook initialization failed: {error}");
+                std::process::exit(2);
+            }
+        }
+    }
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }

@@ -9,6 +9,8 @@ pub mod dib_policy;
 pub mod foreground;
 #[cfg(windows)]
 pub mod hotkey;
+#[cfg(windows)]
+pub mod hud_hook;
 pub mod input_policy;
 #[cfg(windows)]
 pub mod integrity;
