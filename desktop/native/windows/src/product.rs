@@ -394,7 +394,12 @@ impl Product {
         } else {
             keys::release_held_modifiers()
         });
-        if !keys::held_modifiers().is_empty() {
+        // A held key auto-repeats. Ignore repeats of keys we just neutralised,
+        // but still refuse a genuinely new modifier pressed after the wait.
+        if keys::held_modifiers()
+            .iter()
+            .any(|vk| !modifiers.0.contains(vk))
+        {
             return failed("ZERO_WRITE", "请松开快捷键后重试");
         }
         let explicit = r.action == "insert";
@@ -466,8 +471,9 @@ impl Product {
                 Ok(t) => t,
                 Err(e) => return e,
             };
+            let still_held = keys::held_modifiers();
             if !clipboard::still_owned(clip.seq).unwrap_or(false)
-                || !keys::held_modifiers().is_empty()
+                || still_held.iter().any(|vk| !modifiers.0.contains(vk))
             {
                 return failed("ZERO_WRITE", "写入前剪贴板或按键已变化，本次没有输入");
             }
@@ -492,7 +498,7 @@ impl Product {
                 .as_ref()
                 .and_then(|b| verification::expected_after(b, r.text.as_deref().unwrap_or("")));
             // Exactly one attempt; accepted input count is deliberately not used as delivery evidence.
-            let _ = keys::send_ctrl_v();
+            let _ = keys::send_ctrl_v_after_releasing(&still_held);
             drop(modifiers);
             std::thread::sleep(Duration::from_millis(350));
             let end = Instant::now() + Duration::from_millis(1000);
