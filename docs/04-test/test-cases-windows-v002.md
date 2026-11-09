@@ -44,6 +44,8 @@
 |---|---|---|
 | TC-WIN-17 / WIN-05 | L1+L3；mic granted/denied/restricted/not-determined/unknown/异常；登录引导、快捷键、返回系统设置复查 | 仅 granted 可继续创建会话；Win 不调用 askForMediaAccess/AX。固定打开 privacy-microphone，禁用总开关有说明，未知/异常不造允许；后台恢复不激活主窗 |
 | TC-WIN-18 / WIN-05、07 | L1+L3；权限预检期间取消/切账号；granted 但真实 getUserMedia 无设备/拒绝；关闭主窗继续真实采集 | 迟到预检不启动旧会话；采集失败明确反馈并取消服务会话，停止音轨/上传；隐藏窗口仍有真实 16k 单声道 PCM/250ms 分块，不以假波形通过 |
+
+> 变更记录（2026-11-09，Windows 适用范围）：TC-WIN-17 实机通过 granted/denied、登录引导、后台 `--background` 启动不激活主窗、快捷键与隐私设置入口；TC-WIN-18 实机通过隐藏主窗真实采集与插入、禁用声卡控制器后的 `getUserMedia` 失败提示「Requested device not found」并取消会话。`restricted`/`not-determined` 为 macOS 状态，Windows 无法产生；`unknown`/异常与异步预检取消/切账号由 L1 失败关闭测试覆盖（Windows 预检同步）。按 Windows 适用范围记通过。
 | TC-WIN-19 / WIN-06 | L1+L3；管理员/保护/目标变更/helper 不可用/unknown，简中与英文逐组 | 失败卡基准 284px、两行短提示，复制仅点击，关闭/8 秒/新录音让位。Windows 无“去授权”；unknown 不弹零写入失败卡。完整原因与结果仍可查看，所有新增文案有双语资源 |
 | TC-WIN-20 / WIN-06、12 | L1+L3；Win 设置/首页/帮助/首次登录，账号全局学习偏好 true；成功输入，修改目标内容；Mac 对照 | Windows 能 strict inserted+observable，但每会话 learning_enabled=false、不启动 observe、不自动入词库；说明暂不支持并保留已有计数/词条。账号偏好和 Mac 学习不改变；手动词库/冻结识别仍正常 |
 | TC-WIN-21 / WIN-06、11 | L1+L3；非法 Renderer sender、非 boolean 自启、任意 URI/path、Renderer 查询 token | RPC 白名单/类型校验；仅 Main 持有服务地址和 token，不增加任意系统命令入口；系统入口失败明确提示 |
