@@ -82,6 +82,10 @@
 > 变更记录（2026-11-09，TC-WIN-36 实机）：正式 NSIS 安装包 0.0.2（SHA256 `00c0f040…7150`）连接真实服务，完成 Notepad 与 Chrome 真实语音插入、HUD 真实取消；拔掉以太网后显示「无法连接服务，请检查网络后重试」且无会话/插入，插回后真实插入恢复。真实语音正文不入库。60 秒「录音中断网」组因当时网卡仍为 Up，未形成有效中途断网证据；本组网络失败以服务不可达场景验证。
 >
 > 变更记录（2026-11-09，TC-WIN-06 实机）：password/readonly/disabled/button 均为 `TARGET_UNSUPPORTED`，页面 `paste=0 enter=0 keys=0` 且密码正文未读；本应用前台、桌面、任务栏分别拒绝；锁屏插入为 `TARGET_CHANGED` / `current_target_unavailable`，effect none。按 L2 实机记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-01 实机 L2）：安装版 helper 分别向 Notepad 与 Chrome input/textarea 插入「中文🙂」。Chrome 选区/光标/空框 6 组、LF 多行组均为 `inserted`，UTF-16 光标 10/10、10/10、4/4，残余选区 0，`paste=1 enter=0`，`BEGIN ` 前缀与 ` END` 后缀保持；CRLF 多行组目标将 `\r\n` 归一化为 `\n`，helper 如实 `unverified`（页面 1 次粘贴、0 回车、实际 17 个 UTF-16 单位），未伪造精确匹配。Notepad 选区/光标/空框 3 组均 `inserted`，读回全文与 helper 精确光标一致。按 L2 实机记通过；正式包应用级插入见 TC-WIN-36。
+>
+> 变更记录（2026-11-10，TC-WIN-08 实机）：取消、退出账号切换与 Modern Standby 睡眠分别发生在真实录音中：HUD 消失、Chrome 保持 `BEGIN `、无迟到写入；退出账号后旧结果未进入新账号，重新登录后 09:01 新会话正常；睡眠/唤醒后 HUD 已消失、目标未变，唤醒后新会话与真实插入正常。准备/claim/日志后/helper 调用/迟到返回组合沿用 L1 的 19 组会话边界通过；软件休眠回调不作为真实 OS 睡眠证据，本次已补真实 OS 睡眠/账号切换。按 L1+L2 记通过。
 
 ## 覆盖与阶段门禁
 
