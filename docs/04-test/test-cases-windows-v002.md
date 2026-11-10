@@ -92,6 +92,8 @@
 > 变更记录（2026-11-10，TC-WIN-20 实机）：用户 2026-11-10 决定按 Windows 适用范围记通过。真实会话（09:52）`state=ready`、`learning_enabled=false`、`insertion=inserted`；用户修改插入文本后 `learning_events=0`、`cumulative=0`、`dictionary_terms=1`（手动词条 ZephyrDocs 保留），未启动 observe、未自动入词库；设置页「自动学习词条：本版暂不支持」及 Windows 提示实拍，账号学习偏好仍 true。Mac 对照归 TC-WIN-39。
 >
 > 变更记录（2026-11-10，TC-WIN-25 实机）：临时 deny `HKCU\...\Run` 键 `SetValue` 后点「开机自启」，应用显示「未能保存开机自启，已保留原值。」（`AUTOSTART_SAVE_FAILED`），Run/StartupApproved 无残留、开关仍「已关闭」；.NET 还原 ACL（有效 ACE/owner 相同，SDDL 仅 AI 标志差异）后正常开启写入完整路径 + `--background`、系统默认 enabled（StartupApproved 空），再关闭恢复原状。缺 `--background` 读回不符沿用 2026-11-02 实机；回滚失败/不确定状态由 L1 `system-settings.test.ts` 9/9 覆盖。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-27 实机）：系统注销/登录后应用于 11:20:21 以 `--background` 启动，主进程 `MainWindowHandle=0`、无可见主窗、5 个应用进程/2 个 helper；Run 值含 `--background`，账号与手动词条恢复，11:20 后无新会话。手动再次启动只唤出已有主窗、进程仍 5；应用菜单 Exit 后 0 应用/0 helper。未保存账号组：退出登录→后台启动无可见主窗→手动打开显示登录页（无自动登录）。最后清除 Run/StartupApproved，自启关闭。首次注册后立即强退/后台恢复沿用 CI 实际客户端；托盘菜单沿用 TC-WIN-22。按 L1+L3 记通过。
 
 ## 覆盖与阶段门禁
 
