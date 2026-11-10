@@ -139,12 +139,7 @@ mod imp {
         }
         let module = unsafe { GetModuleHandleW(None) }.map_err(|error| error.to_string())?;
         let hook = unsafe {
-            SetWindowsHookExW(
-                WH_MOUSE_LL,
-                Some(hook_proc),
-                Some(HINSTANCE(module.0)),
-                0,
-            )
+            SetWindowsHookExW(WH_MOUSE_LL, Some(hook_proc), Some(HINSTANCE(module.0)), 0)
         }
         .map_err(|error| error.to_string())?;
         let mut message = MSG::default();
