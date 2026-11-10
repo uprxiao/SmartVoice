@@ -88,6 +88,10 @@
 > 变更记录（2026-11-10，TC-WIN-08 实机）：取消、退出账号切换与 Modern Standby 睡眠分别发生在真实录音中：HUD 消失、Chrome 保持 `BEGIN `、无迟到写入；退出账号后旧结果未进入新账号，重新登录后 09:01 新会话正常；睡眠/唤醒后 HUD 已消失、目标未变，唤醒后新会话与真实插入正常。准备/claim/日志后/helper 调用/迟到返回组合沿用 L1 的 19 组会话边界通过；软件休眠回调不作为真实 OS 睡眠证据，本次已补真实 OS 睡眠/账号切换。按 L1+L2 记通过。
 >
 > 变更记录（2026-11-10，TC-WIN-21 L3）：临时测试构建在主窗/HUD 正常创建后新增一个隐藏的第二 Renderer，经 preload `window.electronAPI.invoke` 调用 `settings.get`、`app.info`、`auth.me`，均以 `Untrusted IPC sender` 拒绝；主窗同一 `auth.me` 调用被授权并返回 null（无 token）。测试源码补丁已移除、未提交；L1 54/54 覆盖非法 sender/非 boolean/URI/path/token。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-20 实机）：用户 2026-11-10 决定按 Windows 适用范围记通过。真实会话（09:52）`state=ready`、`learning_enabled=false`、`insertion=inserted`；用户修改插入文本后 `learning_events=0`、`cumulative=0`、`dictionary_terms=1`（手动词条 ZephyrDocs 保留），未启动 observe、未自动入词库；设置页「自动学习词条：本版暂不支持」及 Windows 提示实拍，账号学习偏好仍 true。Mac 对照归 TC-WIN-39。
+>
+> 变更记录（2026-11-10，TC-WIN-25 实机）：临时 deny `HKCU\...\Run` 键 `SetValue` 后点「开机自启」，应用显示「未能保存开机自启，已保留原值。」（`AUTOSTART_SAVE_FAILED`），Run/StartupApproved 无残留、开关仍「已关闭」；.NET 还原 ACL（有效 ACE/owner 相同，SDDL 仅 AI 标志差异）后正常开启写入完整路径 + `--background`、系统默认 enabled（StartupApproved 空），再关闭恢复原状。缺 `--background` 读回不符沿用 2026-11-02 实机；回滚失败/不确定状态由 L1 `system-settings.test.ts` 9/9 覆盖。按 L1+L3 记通过。
 
 ## 覆盖与阶段门禁
 
