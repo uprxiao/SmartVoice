@@ -68,7 +68,7 @@
 
 | ID / 关联 | 层级与前置、操作 | 判定标准 |
 |---|---|---|
-| TC-WIN-31 / WIN-10 | L1+L2/L3；100/150/200%、负坐标、多屏输入在屏 A 鼠标在 B；经典caret/UIA range/element/window/mouse 逐层降级 | physical→DIP 一次转换，HUD 在输入所在屏 workArea；有输入位置不优先鼠标，逐层依据可追踪；缺屏/缩放参数 not_run，不以单屏替代 |
+| TC-WIN-31 / WIN-10 | L2/L3；多屏输入在屏 A、鼠标在屏 B（第二屏组，唯一保留组）；输入位置不优先鼠标 | HUD 在输入所在屏 workArea；第二屏组通过即整条通过。2026-11-10 用户决定去掉 200%/100%/150% 缩放、负坐标单组与逐层降级等其他参数，不再要求 |
 | TC-WIN-32 / WIN-10 | L1+L2/L3；显示/移动/隐藏15次采前台PID/焦点；定位迟到、取消、开启下一次录音 | HUD showInactive/非激活，不改变当前目标；停止/取消后迟到 bounds 不复活，新代际不混入旧坐标 |
 | TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件；首次凭据子进程异常退出/超时/应答缺失或其他profile参数 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录。初始化子进程须正常退出、目录身份相符且父进程独立解密canary匹配才允许持久化；另测子进程退出0但配置未持久化/密钥不同；异常仅内存登录，无明文fallback/递归启动/额外主窗；Mac不走此流程 |
 | TC-WIN-34 / WIN-01、11 | L1+真 PostgreSQL HTTP；同结果重复 claim/receipt、inserted/failed/unverified、跨账号访问；源码冻结 | API/数据库读回状态和 effect 一致；tenant 拒绝；重复不重复统计/执行，unknown 不计 inserted；不新增 Windows 服务端枚举/表 |
@@ -94,6 +94,8 @@
 > 变更记录（2026-11-10，TC-WIN-25 实机）：临时 deny `HKCU\...\Run` 键 `SetValue` 后点「开机自启」，应用显示「未能保存开机自启，已保留原值。」（`AUTOSTART_SAVE_FAILED`），Run/StartupApproved 无残留、开关仍「已关闭」；.NET 还原 ACL（有效 ACE/owner 相同，SDDL 仅 AI 标志差异）后正常开启写入完整路径 + `--background`、系统默认 enabled（StartupApproved 空），再关闭恢复原状。缺 `--background` 读回不符沿用 2026-11-02 实机；回滚失败/不确定状态由 L1 `system-settings.test.ts` 9/9 覆盖。按 L1+L3 记通过。
 >
 > 变更记录（2026-11-10，TC-WIN-27 实机）：系统注销/登录后应用于 11:20:21 以 `--background` 启动，主进程 `MainWindowHandle=0`、无可见主窗、5 个应用进程/2 个 helper；Run 值含 `--background`，账号与手动词条恢复，11:20 后无新会话。手动再次启动只唤出已有主窗、进程仍 5；应用菜单 Exit 后 0 应用/0 helper。未保存账号组：退出登录→后台启动无可见主窗→手动打开显示登录页（无自动登录）。最后清除 Run/StartupApproved，自启关闭。首次注册后立即强退/后台恢复沿用 CI 实际客户端；托盘菜单沿用 TC-WIN-22。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-31 范围）：用户明确决定本用例只保留第二屏组（输入在屏 A、鼠标在屏 B，核对 HUD 在输入所在屏 workArea、有输入位置不优先鼠标），去掉 200% 与 100%/150% 缩放、负坐标单组、经典 caret/UIA range/element/window/mouse 逐层降级等其他参数；第二屏组通过即整条通过。100%/150% 单页插入保留为补充证据（2026-11-10 实测），不作为本用例必需参数。
 
 ## 覆盖与阶段门禁
 
