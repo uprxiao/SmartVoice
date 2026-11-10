@@ -40,7 +40,7 @@ html, body, #root {
   -webkit-app-region: drag;
   overflow: hidden;
 }
-.hud-pill[data-phase="preparing"] { width: 54px; height: 12px; padding: 0; background: #0008; }
+.hud-pill[data-phase="preparing"] { width: 132px; height: 34px; padding: 4px; background: #000; }
 .hud-pill[data-phase="preparing"]::after {
   content: "";
   position: absolute;

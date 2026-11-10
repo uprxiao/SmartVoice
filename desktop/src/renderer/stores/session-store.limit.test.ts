@@ -9,10 +9,11 @@ vi.mock('../audio/recorder', async importOriginal => ({ ...await importOriginal<
   PcmRecorder: class { start = doubles.start; stop = doubles.stop; acknowledge = doubles.acknowledge; } }));
 vi.mock('../lib/ipc', () => ({
   events: { on: (event: { name: string }, callback: (value: unknown) => void) => { doubles.listeners.set(event.name, callback); return () => doubles.listeners.delete(event.name); }, emit: vi.fn() },
-  rpc: { session: { start: vi.fn(), captureReady: vi.fn(), cancelStart: vi.fn().mockResolvedValue(undefined), cancel: vi.fn(), status: vi.fn(),
+  rpc: { app: { clock: vi.fn() }, session: { start: vi.fn(), captureReady: vi.fn(), cancelStart: vi.fn().mockResolvedValue(undefined), cancel: vi.fn(), status: vi.fn(),
     finish: vi.fn(), insert: vi.fn(), retry: vi.fn(), reset: vi.fn().mockResolvedValue(undefined) }, history: { selectForRetry: vi.fn() }, auth: {}, settings: {} },
 }));
 import { rpc } from '../lib/ipc';
+import { resetClockCalibration } from '../audio/clock-calibration';
 import { AuthStore } from './auth-store';
 import { SessionStore } from './session-store';
 import type { UiStore } from './ui-store';
@@ -34,6 +35,8 @@ const emit = (value: SessionProgress) => doubles.listeners.get('session.progress
 
 beforeEach(() => {
   vi.clearAllMocks(); doubles.listeners.clear();
+  resetClockCalibration();
+  vi.mocked(rpc.app.clock).mockResolvedValue({ now: performance.timeOrigin + performance.now() });
   vi.mocked(rpc.session.status).mockResolvedValue(progress('', { session_id: null, attempt_no: null, state: 'created', revision: 0 }));
   vi.mocked(rpc.session.captureReady).mockImplementation(async (sessionId, attemptNo) => progress(sessionId, { attempt_no: attemptNo, revision: 2 }));
   vi.mocked(rpc.session.finish).mockResolvedValue(progress('', { state: 'finalizing', revision: 50 }));

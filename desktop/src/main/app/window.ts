@@ -97,6 +97,27 @@ export function hideHud(): void {
   if (win) win.hide();
 }
 
+/**
+ * The transparent, always-on-top HUD can take a second to paint its first
+ * frame after being shown from a long-hidden state. Paint it once at startup
+ * with zero opacity so the first real shortcut already has a warm surface.
+ */
+export function warmHudWindow(): void {
+  const win = getHudWindow();
+  if (!win) return;
+  try {
+    win.setOpacity(0);
+    win.showInactive();
+    setTimeout(() => {
+      if (win.isDestroyed()) return;
+      win.hide();
+      win.setOpacity(1);
+    }, 80);
+  } catch {
+    try { win.setOpacity(1); } catch { /* the HUD remains hidden */ }
+  }
+}
+
 export function createMainWindow(options: MainWindowOptions = {}): Promise<BrowserWindow> {
   if (mainCreation) return mainCreation;
   const existing = getMainWindow();

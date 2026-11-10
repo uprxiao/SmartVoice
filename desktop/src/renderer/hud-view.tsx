@@ -49,6 +49,7 @@ export function HudView({ frame, level, notice = null, locale = 'zh-CN', onCance
       <div className="hud-pill" data-phase={processing ? 'processing' : frame.phase}
         role="status" aria-label={processing ? (en ? 'Processing' : '正在处理') : frame.phase === 'preparing' ? (en ? 'Preparing' : '准备录音') : (en ? 'Recording' : '正在录音')}
         aria-busy={frame.phase === 'preparing' || frame.phase === 'processing'}>
+        {frame.phase === 'preparing' && <span className="hud-loading">{en ? 'Preparing…' : '正在准备…'}</span>}
         {frame.phase === 'recording' && <>
           <button className="hud-btn hud-cancel" aria-label={en ? 'Cancel' : '取消录音'} onClick={onCancel}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

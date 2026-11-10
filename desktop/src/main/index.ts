@@ -35,6 +35,7 @@ import {
   markAppQuitting,
   resolveAppResource,
   showHud,
+  warmHudWindow,
 } from './app/window';
 import { ApiClient } from './core/api-client';
 import { AuthService } from './core/auth-service';
@@ -177,6 +178,9 @@ async function main(): Promise<void> {
   const shortcuts = new ShortcutService();
   debug('services');
   await auth.restore().catch(() => null);
+  // Warm the access token in the background so the first shortcut does not wait
+  // for a token refresh before the session/WS can start.
+  void api.ensureFreshAccess().catch(() => undefined);
   debug('auth-restore');
 
   // Register IPC handlers before any window starts loading, otherwise a fast
@@ -269,6 +273,7 @@ async function main(): Promise<void> {
   if (showRequested) await showMain();
   debug('main-window');
   await createHudWindow();
+  warmHudWindow();
   debug('hud-window');
   startHudClickHook({
     onCancel: () => events.emit(hudCancelEvent, null),

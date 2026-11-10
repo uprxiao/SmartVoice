@@ -19,6 +19,8 @@ describe('real HUD markup', () => {
   it('only presents recording controls and RMS bars after capture handshake', () => {
     const preparing = markup(progress({ capture_ready: false }));
     expect(preparing).toContain('data-phase="preparing"');
+    expect(preparing).toContain('hud-loading');
+    expect(preparing).toContain('正在准备');
     expect(preparing).not.toMatch(/完成录音|取消录音|hud-wave/);
     const silent = markup(progress());
     const voiced = markup(progress(), .8);

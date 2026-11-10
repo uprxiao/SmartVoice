@@ -429,6 +429,7 @@ impl Product {
             ![
                 "synthesised_from_unicode_text",
                 "synthesised_bitmap_from_dib",
+                "synthesised_image_from_dib",
             ]
             .contains(&s.reason)
         }) {

@@ -5,6 +5,7 @@ import { errorMessage } from '../lib/error-message';
 import { events, rpc } from '../lib/ipc';
 import { tr, type Locale } from '../lib/i18n';
 import { CaptureSource } from '@product/capture';
+import { ClockCalibrationError, ensureClockOffset } from '../audio/clock-calibration';
 import { RecorderError } from '../audio/recorder-contract';
 import type { AuthStore } from './auth-store';
 import type { UiStore } from './ui-store';
@@ -134,9 +135,13 @@ export class SessionStore {
     this.phase = 'starting'; this.error = null; this.outcome = null; this.level = 0;
     this.targetApp = null; this.targetError = null; this.insertionAvailable = false;
     let sessionId: string | null = null;
+    let clockOffset = 0;
     const startOperationId = crypto.randomUUID();
     this.pendingStartId = startOperationId;
     try {
+      // Calibrate before creating a server session: an uncalibrated renderer must
+      // not start recording and then trip Main's two-second stale-frame guard.
+      clockOffset = await ensureClockOffset(() => rpc.app.clock());
       const started = await rpc.session.start(this.auth.settings?.learning_enabled ?? true, startOperationId);
       if (generation !== this.generation || userId !== this.auth.user?.id) return;
       sessionId = started.session_id;
@@ -145,16 +150,6 @@ export class SessionStore {
         this.insertionAvailable = started.insertion_available;
         this.progress = { ...EMPTY, session_id: sessionId, attempt_no: started.attempt_no, state: 'streaming' };
       });
-      // Renderer and Main have separate performance.timeOrigin values. Calibrate
-      // once per recording so Main can keep its monotonic future-frame rejection.
-      let clockOffset = 0;
-      try {
-        const before = performance.timeOrigin + performance.now();
-        const clock = await rpc.app.clock();
-        const after = performance.timeOrigin + performance.now();
-        const measured = Number(clock?.now) - (before + after) / 2;
-        if (Number.isFinite(measured) && Math.abs(measured) < 60_000) clockOffset = measured;
-      } catch { /* An unavailable calibration leaves the existing strict clock check intact. */ }
       await this.recorder.start({
         onChunk: (buffer, capturedAtEpochMs) => {
           if (!this.current(generation, userId, sessionId)) return;
@@ -187,7 +182,9 @@ export class SessionStore {
       if (sessionId && terminal(this.progress.state)) return;
       if (sessionId) await rpc.session.cancel(sessionId).catch(() => undefined);
       if (generation !== this.generation || userId !== this.auth.user?.id) return;
-      const message = this.progress.error_code === 'AUDIO_INTERRUPTED' ? this.failureMessage!
+      const message = error instanceof ClockCalibrationError
+        ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, 'home.clockNotReady')
+        : this.progress.error_code === 'AUDIO_INTERRUPTED' ? this.failureMessage!
         : (error instanceof RecorderError && error.code === 'MICROPHONE_PERMISSION_DENIED') || errorMessage(error) === 'MICROPHONE_PERMISSION_DENIED'
           ? tr((this.auth.settings?.locale ?? 'zh-CN') as Locale, this.ui.appInfo?.platform === 'win32' ? 'windows.microphone.hint' : 'home.microphonePermissionDenied')
           : errorMessage(error) === 'MICROPHONE_PERMISSION_UNAVAILABLE'

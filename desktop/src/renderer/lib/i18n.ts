@@ -245,6 +245,7 @@ const DICT: Record<string, Entry> = {
   'home.aria.start': { 'zh-CN': '开始录音', en: 'Start recording' },
   'home.aria.stop': { 'zh-CN': '停止录音', en: 'Stop recording' },
   'home.preparing': { 'zh-CN': '正在准备录音…', en: 'Preparing recording…' },
+  'home.clockNotReady': { 'zh-CN': '语音组件正在准备，请稍后重试', en: 'Speech is still preparing. Try again in a moment.' },
   'home.preparingHint': { 'zh-CN': '准备完成后开始录音', en: 'Recording starts when preparation finishes' },
   'home.listening': { 'zh-CN': '正在聆听…', en: 'Listening…' },
   'home.tapToStart': { 'zh-CN': '点击开始口述', en: 'Click to start dictation' },

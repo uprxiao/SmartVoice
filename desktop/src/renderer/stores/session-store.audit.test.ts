@@ -5,9 +5,10 @@ const doubles=vi.hoisted(()=>({listeners:new Map<string,(value:unknown)=>void>()
 vi.mock('../audio/recorder',async importOriginal=>({...await importOriginal<typeof import('../audio/recorder')>(),PcmRecorder:class {start=doubles.start;stop=doubles.stop;acknowledge=doubles.acknowledge;}}));
 vi.mock('../lib/ipc',()=>({
   events:{on:(event:{name:string},callback:(value:unknown)=>void)=>{doubles.listeners.set(event.name,callback);return ()=>doubles.listeners.delete(event.name);},emit:vi.fn()},
-  rpc:{session:{start:vi.fn(),captureReady:vi.fn(),cancelStart:vi.fn().mockResolvedValue(undefined),cancel:vi.fn(),status:vi.fn(),finish:vi.fn(),insert:vi.fn(),retry:vi.fn(),reset:vi.fn().mockResolvedValue(undefined)},history:{selectForRetry:vi.fn()},auth:{},settings:{}}
+  rpc:{app:{clock:vi.fn()},session:{start:vi.fn(),captureReady:vi.fn(),cancelStart:vi.fn().mockResolvedValue(undefined),cancel:vi.fn(),status:vi.fn(),finish:vi.fn(),insert:vi.fn(),retry:vi.fn(),reset:vi.fn().mockResolvedValue(undefined)},history:{selectForRetry:vi.fn()},auth:{},settings:{}}
 }));
 import { rpc } from '../lib/ipc';
+import { resetClockCalibration } from '../audio/clock-calibration';
 import { RecorderError } from '../audio/recorder';
 import { AuthStore } from './auth-store';
 import { SessionStore } from './session-store';
@@ -23,11 +24,25 @@ const stores:SessionStore[]=[];
 function fixture(loggedIn=true){const auth=new AuthStore();if(loggedIn)auth.snapshot=snapshot();const ui={toast:vi.fn()};const store=new SessionStore(auth,ui as unknown as UiStore);stores.push(store);store.init();return {auth,ui,store};}
 beforeEach(()=>{
  vi.clearAllMocks(); doubles.listeners.clear();
+ resetClockCalibration();
+ vi.mocked(rpc.app.clock).mockResolvedValue({ now: performance.timeOrigin + performance.now() });
  vi.mocked(rpc.session.status).mockResolvedValue(progress({session_id:null,attempt_no:null,state:'created',revision:0}));
  vi.mocked(rpc.session.captureReady).mockImplementation(async (sessionId, attemptNo) => progress({ session_id: sessionId, attempt_no: attemptNo, capture_ready: true, revision: 2 }));
  vi.mocked(rpc.session.start).mockResolvedValue(started); vi.mocked(rpc.session.cancel).mockResolvedValue(progress({state:'cancelled',revision:4}));
 });
 afterEach(()=>{for(const store of stores.splice(0))store.invalidateLocal();});
+describe('first-recording clock calibration', () => {
+ it('fails closed before creating a session when the clock cannot be calibrated', async () => {
+  const {store,ui}=fixture();
+  vi.mocked(rpc.app.clock).mockRejectedValue(new Error('clock unavailable'));
+  await store.start();
+  expect(rpc.session.start).not.toHaveBeenCalled();
+  expect(doubles.start).not.toHaveBeenCalled();
+  expect(store.phase).toBe('failed');
+  expect(store.error).toBe('语音组件正在准备，请稍后重试');
+  expect(ui.toast).toHaveBeenLastCalledWith(store.error,'error');
+ });
+});
 describe('result-time target metadata', () => {
  it('requests automatic insertion without a recording-time target and adopts later Main metadata', async () => {
   const {store} = fixture();
@@ -50,6 +65,7 @@ describe('VOICE-15 consecutive dictations keep completed results in history', ()
   const creation=pending<SessionStartResult>();
   vi.mocked(rpc.session.start).mockReturnValueOnce(creation.promise);
   const starting=store.toggle();
+  await flush();
   expect.soft(rpc.session.start).toHaveBeenCalledTimes(2);
   expect.soft(store.phase).toBe('starting');
   expect.soft(store.result).toBeNull();
@@ -115,7 +131,7 @@ describe('microphone denial stays local and requires an explicit new recording',
 describe('renderer operation identity and authoritative snapshots (AUTH-16/VOICE-07/API-19)',()=>{
  it('cancel during create sends a bound cancellation without waiting for a session ID',async()=>{
   const {store}=fixture();const creation=pending<SessionStartResult>();vi.mocked(rpc.session.start).mockReturnValueOnce(creation.promise);
-  const starting=store.start();const operationId=vi.mocked(rpc.session.start).mock.calls[0][1];await store.cancel();
+  const starting=store.start();await flush();const operationId=vi.mocked(rpc.session.start).mock.calls[0][1];await store.cancel();
   expect(rpc.session.cancelStart).toHaveBeenCalledWith(operationId);creation.resolve(started);await starting;
   expect(doubles.start).not.toHaveBeenCalled();expect(store.phase).toBe('cancelled');
  });
