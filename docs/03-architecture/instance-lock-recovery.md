@@ -12,7 +12,7 @@
 
 `ManagedServer` 观察 fenced 标志，进入既有受控 shutdown；该路径使用失败退出码 75，供 `Restart=on-failure` 识别。启动失败及普通外部停止沿用原语义；受控关闭仍先拒业务、等待旧任务，再关闭网络和 lifespan，不因自动恢复提前释放资源。
 
-Linux unit 使用 Type=notify / NotifyAccess=main / WatchdogSec=30s。主进程以 AF_UNIX datagram 发送 READY=1（监听启动完成，不代表模型业务 ready）；独立 asyncio 任务最多每 5 秒、且小于 watchdog 周期三分之一发送 WATCHDOG=1。普通关闭期间继续通知，实例 fenced 后立即停止通知。故障清理卡住或事件循环失去调度时，systemd 在最后一次通知后 30 秒内触发 SIGKILL；KillMode=control-group / SendSIGKILL=yes 保证旧服务进程组终止后再重启。此期限是故障进程回收上限，不延长任何业务或音频 TTL 预算。
+Linux unit 使用 Type=notify / NotifyAccess=main / WatchdogSec=30s。主进程以 AF_UNIX datagram 发送 READY=1（监听启动完成，不代表模型业务 ready）；独立 asyncio 任务最多每 5 秒、且不超过 watchdog 周期三分之一发送 WATCHDOG=1。普通关闭期间继续通知，实例 fenced 后立即停止通知。故障清理卡住或事件循环失去调度时，systemd 以最后一次通知后 30 秒为 watchdog 期限触发 SIGKILL；KillMode=control-group / SendSIGKILL=yes 保证旧服务进程组终止后再重启。该配置用于故障进程回收，不延长任何业务或音频 TTL 预算，也不承诺宿主机失去调度时的实际墙钟恢复上界。
 
 通知仅使用当前进程匹配的 WATCHDOG_PID、有效 WATCHDOG_USEC 与 NOTIFY_SOCKET；非 systemd 启动不通知，不新增依赖。socket 发送非阻塞；发送失败仅记录有限异常类型，不伪报喂狗成功。启动通知超时 60 秒。RestartSec=5s，StartLimitIntervalSec=300s / StartLimitBurst=5 限制持续故障重启风暴；达到上限保留 failed 状态供运维处理。告警由现有运维渠道接入，当前不虚构已连接的外部告警渠道。
 
