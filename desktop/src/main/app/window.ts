@@ -50,6 +50,9 @@ export async function createHudWindow(): Promise<BrowserWindow> {
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
+    // Keep the HUD non-activating on every platform. Windows button presses are
+    // handled by the native low-level mouse hook (--hud-hook), so the HUD never
+    // needs to activate or steal focus from the insertion target.
     focusable: false,
     ...hudWindowPlatformOptions(process.platform),
     alwaysOnTop: true,
@@ -80,7 +83,13 @@ export async function createHudWindow(): Promise<BrowserWindow> {
 
 export function showHud(): void {
   const win = getHudWindow();
-  if (win) win.showInactive();
+  if (win) {
+    win.showInactive();
+    // Windows: showInactive() does not raise an existing topmost window above
+    // another topmost window; moveTop() keeps the HUD above the main window
+    // without activating it. macOS keeps its existing panel behavior.
+    if (process.platform === 'win32') win.moveTop();
+  }
 }
 
 export function hideHud(): void {

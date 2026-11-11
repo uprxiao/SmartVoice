@@ -23,6 +23,7 @@ import { registerRPCRouter } from '@shared/ipc/rpc';
 import { buildAppMenu } from './app/menu';
 import { HudVisibility } from './app/hud-visibility';
 import { HudPosition, inputRectangle } from './app/hud-position';
+import { startHudClickHook, stopHudClickHook } from './app/hud-click-hook';
 import { WindowsTray } from './app/windows-tray';
 import { inputGeometryToDip } from '../../native/input-geometry';
 import {
@@ -269,6 +270,10 @@ async function main(): Promise<void> {
   debug('main-window');
   await createHudWindow();
   debug('hud-window');
+  startHudClickHook({
+    onCancel: () => events.emit(hudCancelEvent, null),
+    onConfirm: () => events.emit(hudConfirmEvent, null),
+  });
   powerMonitor.on('suspend', interrupt);
   shortcuts.setCallback(() => {
     // Toggle capture without changing the main window's visibility or
@@ -283,6 +288,7 @@ async function main(): Promise<void> {
   app.on('before-quit', () => {
     quitting = true;
     markAppQuitting();
+    stopHudClickHook();
     tray?.dispose();
     showMain = null;
     hudVisibility.reset();

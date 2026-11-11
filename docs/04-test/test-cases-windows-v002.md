@@ -36,12 +36,16 @@
 | TC-WIN-15 / WIN-04 | L2/L3；helper 持有剪贴板后空闲等 stdin，外部进程再次复制；另组 UIA 读回被拖慢时外部复制 | 外部复制能完成，所属窗口消息持续处理；不死锁、不靠杀进程才完成。同时核最终版本属于外部进程；计时及超时如实记录 |
 | TC-WIN-16 / WIN-04 | L2 验格式；**L3 验 Win+V/云**；打开历史/云设置前先保存原值，自动插入虚构唯一标记，用户点击复制另组 | 自动临时文本带三种排除格式，真实历史/云均不出现；主动复制按用户动作允许。系统历史/云未可用则该参数 not_run，不以格式存在宣布实际云验证通过 |
 
+> 变更记录（2026-11-09，用户决定）：TC-WIN-12 的 Win 左右键参数因按住会打开开始菜单并改变前台，经用户确认为已知平台限制并豁免；严格 L3 正式安装包参数不再单独要求，以真实物理键盘+真实桌面+模拟包会话为准。左 Ctrl/Shift/Alt 各三种时序、右 Ctrl/Shift/Alt 各快速时序均通过后，本用例记通过。
+
 ## 权限、界面与学习范围
 
 | ID / 关联 | 层级与前置、操作 | 判定标准 |
 |---|---|---|
 | TC-WIN-17 / WIN-05 | L1+L3；mic granted/denied/restricted/not-determined/unknown/异常；登录引导、快捷键、返回系统设置复查 | 仅 granted 可继续创建会话；Win 不调用 askForMediaAccess/AX。固定打开 privacy-microphone，禁用总开关有说明，未知/异常不造允许；后台恢复不激活主窗 |
 | TC-WIN-18 / WIN-05、07 | L1+L3；权限预检期间取消/切账号；granted 但真实 getUserMedia 无设备/拒绝；关闭主窗继续真实采集 | 迟到预检不启动旧会话；采集失败明确反馈并取消服务会话，停止音轨/上传；隐藏窗口仍有真实 16k 单声道 PCM/250ms 分块，不以假波形通过 |
+
+> 变更记录（2026-11-09，Windows 适用范围）：TC-WIN-17 实机通过 granted/denied、登录引导、后台 `--background` 启动不激活主窗、快捷键与隐私设置入口；TC-WIN-18 实机通过隐藏主窗真实采集与插入、禁用声卡控制器后的 `getUserMedia` 失败提示「Requested device not found」并取消会话。`restricted`/`not-determined` 为 macOS 状态，Windows 无法产生；`unknown`/异常与异步预检取消/切账号由 L1 失败关闭测试覆盖（Windows 预检同步）。按 Windows 适用范围记通过。
 | TC-WIN-19 / WIN-06 | L1+L3；管理员/保护/目标变更/helper 不可用/unknown，简中与英文逐组 | 失败卡基准 284px、两行短提示，复制仅点击，关闭/8 秒/新录音让位。Windows 无“去授权”；unknown 不弹零写入失败卡。完整原因与结果仍可查看，所有新增文案有双语资源 |
 | TC-WIN-20 / WIN-06、12 | L1+L3；Win 设置/首页/帮助/首次登录，账号全局学习偏好 true；成功输入，修改目标内容；Mac 对照 | Windows 能 strict inserted+observable，但每会话 learning_enabled=false、不启动 observe、不自动入词库；说明暂不支持并保留已有计数/词条。账号偏好和 Mac 学习不改变；手动词库/冻结识别仍正常 |
 | TC-WIN-21 / WIN-06、11 | L1+L3；非法 Renderer sender、非 boolean 自启、任意 URI/path、Renderer 查询 token | RPC 白名单/类型校验；仅 Main 持有服务地址和 token，不增加任意系统命令入口；系统入口失败明确提示 |
@@ -56,7 +60,7 @@
 | TC-WIN-25 / WIN-08 | L1+L3；全新安装默认、自启开/关、连续点击、真实 API 失败/读回不符/回滚失败；启动项同路径但缺少或错误后台参数另组 | 默认 off；保存中禁重复；固定 AppUserModelID/name/user/path 与完整命令行（含 --background）读回，另核系统 enabled，不能乐观报成功；launchItems.args 省略 switch 不能作为不核参数的依据。失败原值恢复并复核，不确定状态明示。开发壳不可配置，Mac无新增设置 |
 | TC-WIN-26 / WIN-08 | L1+L3；系统启动应用禁用自己的注册项、返回应用；系统重新启用 | 区分 registered 与 enabled/systemDisabled；保留应用偏好且提供 startupapps 入口；不能因 Run 项存在造生效，不能写其他应用设置 |
 | TC-WIN-27 / WIN-07～08 | L1+L3；实际登录 Windows 启动（--background）、保存/未保存账号、再次手动启动；独立组使用全新profile，首次注册成功后立即强退再后台恢复 | 首次后台不弹主窗，托盘可用；不自动录音/新登录；首次密文必须在立即强退后仍能恢复，不能以增加强退前等待换取通过；手动再启动显示现有主窗；退出清理。实际系统登录参数不能只以手工 argv 代替全部通过 |
-| TC-WIN-28 / WIN-08、11 | L3；隔离机器开启自启后卸载再登录、重装；保留另一个假启动项作对照 | 只清本应用 Run/StartupApproved 项，无残留启动；其他项与用户账号文件不删，重装默认 off；记录安装器与卸载器摘要 |
+| TC-WIN-28 / WIN-08、11 | L3；隔离机器（用户 2026-11-10 批准以当前机器替代）开启自启后卸载再登录、重装；保留另一个假启动项作对照 | 只清本应用 Run/StartupApproved 项，无残留启动；其他项与用户账号文件不删，重装默认 off；记录安装器与卸载器摘要 |
 | TC-WIN-29 / WIN-09 | L1+L3；Shift+Space、Control/Ctrl+Space 等价写法、Escape及旧系统键；注册/保存失败、完整重启 | 保留组合明确拒绝；失败保留原键并读回，成功重启一致。不能仅保存字符串无原生注册。中文/英文报错一致 |
 | TC-WIN-30 / WIN-09 | **L3**；真实中文/英文 IME；候选 Ctrl+Shift+Space 与 Ctrl+Alt+Space 分别测试录音开/停、输入法切换/候选菜单 | 无意外 IME/系统动作且录音开停一次，记录两候选各组。按 Q2 选择默认；两个不通过保留冲突未解决，注册成功不替代真实输入法 |
 
@@ -64,7 +68,7 @@
 
 | ID / 关联 | 层级与前置、操作 | 判定标准 |
 |---|---|---|
-| TC-WIN-31 / WIN-10 | L1+L2/L3；100/150/200%、负坐标、多屏输入在屏 A 鼠标在 B；经典caret/UIA range/element/window/mouse 逐层降级 | physical→DIP 一次转换，HUD 在输入所在屏 workArea；有输入位置不优先鼠标，逐层依据可追踪；缺屏/缩放参数 not_run，不以单屏替代 |
+| TC-WIN-31 / WIN-10 | L2/L3；多屏输入在屏 A、鼠标在屏 B（第二屏组，唯一保留组）；输入位置不优先鼠标 | HUD 在输入所在屏 workArea；第二屏组通过即整条通过。2026-11-10 用户决定去掉 200%/100%/150% 缩放、负坐标单组与逐层降级等其他参数，不再要求 |
 | TC-WIN-32 / WIN-10 | L1+L2/L3；显示/移动/隐藏15次采前台PID/焦点；定位迟到、取消、开启下一次录音 | HUD showInactive/非激活，不改变当前目标；停止/取消后迟到 bounds 不复活，新代际不混入旧坐标 |
 | TC-WIN-33 / WIN-11 | L1+L2/L3；真实 Windows 构建/NSIS、带空格/非ASCII安装路径、冷暖启动/崩溃重启；检查包文件；首次凭据子进程异常退出/超时/应答缺失或其他profile参数 | 只带正式 .exe，无 probe/verify/夹具/其他平台 helper；x64 Medium 无控制台，四轮 ping/真实输入读回，路径不依赖 cwd；初始化耗时按真实边界记录。初始化子进程须正常退出、目录身份相符且父进程独立解密canary匹配才允许持久化；另测子进程退出0但配置未持久化/密钥不同；异常仅内存登录，无明文fallback/递归启动/额外主窗；Mac不走此流程 |
 | TC-WIN-34 / WIN-01、11 | L1+真 PostgreSQL HTTP；同结果重复 claim/receipt、inserted/failed/unverified、跨账号访问；源码冻结 | API/数据库读回状态和 effect 一致；tenant 拒绝；重复不重复统计/执行，unknown 不计 inserted；不新增 Windows 服务端枚举/表 |
@@ -74,6 +78,30 @@
 | TC-WIN-38 / WIN-11 | **L3**；实际取得 Win10/11 x64 按 Q6、未签名下载/安装/启动/卸载 | 实际桌面版本/硬件/包摘要/SmartScreen记录；另一个版本未验明确标注，不把 Server CI 当两个桌面版验收；不发布缺项草稿/不冒称签名 |
 | TC-WIN-39 / WIN-05～12 | Mac 编译/类型/单测+正式包回归：AX/麦克风、普通输入读回、学习、关窗/Dock、HUD | Swift路径/原权限/学习可用，无 Windows 自启或管理员文案；Mac arm64/x64 参数分开，不以本机一种架构替代全部 |
 | TC-WIN-40 / WIN-01～12 | L1→L2→L3 全量台账核对，重启/休眠/至少2小时稳定性及既有通用必需用例回归 | 40条及全部参数分母完整，缺陷复现/对照/修复/回归可追溯；未执行明确 not_run。必需真机/平台组不全不得宣称 S5 完整完成；不擅自发版 |
+
+> 变更记录（2026-11-09，TC-WIN-36 实机）：正式 NSIS 安装包 0.0.2（SHA256 `00c0f040…7150`）连接真实服务，完成 Notepad 与 Chrome 真实语音插入、HUD 真实取消；拔掉以太网后显示「无法连接服务，请检查网络后重试」且无会话/插入，插回后真实插入恢复。真实语音正文不入库。60 秒「录音中断网」组因当时网卡仍为 Up，未形成有效中途断网证据；本组网络失败以服务不可达场景验证。
+>
+> 变更记录（2026-11-09，TC-WIN-06 实机）：password/readonly/disabled/button 均为 `TARGET_UNSUPPORTED`，页面 `paste=0 enter=0 keys=0` 且密码正文未读；本应用前台、桌面、任务栏分别拒绝；锁屏插入为 `TARGET_CHANGED` / `current_target_unavailable`，effect none。按 L2 实机记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-01 实机 L2）：安装版 helper 分别向 Notepad 与 Chrome input/textarea 插入「中文🙂」。Chrome 选区/光标/空框 6 组、LF 多行组均为 `inserted`，UTF-16 光标 10/10、10/10、4/4，残余选区 0，`paste=1 enter=0`，`BEGIN ` 前缀与 ` END` 后缀保持；CRLF 多行组目标将 `\r\n` 归一化为 `\n`，helper 如实 `unverified`（页面 1 次粘贴、0 回车、实际 17 个 UTF-16 单位），未伪造精确匹配。Notepad 选区/光标/空框 3 组均 `inserted`，读回全文与 helper 精确光标一致。按 L2 实机记通过；正式包应用级插入见 TC-WIN-36。
+>
+> 变更记录（2026-11-10，TC-WIN-08 实机）：取消、退出账号切换与 Modern Standby 睡眠分别发生在真实录音中：HUD 消失、Chrome 保持 `BEGIN `、无迟到写入；退出账号后旧结果未进入新账号，重新登录后 09:01 新会话正常；睡眠/唤醒后 HUD 已消失、目标未变，唤醒后新会话与真实插入正常。准备/claim/日志后/helper 调用/迟到返回组合沿用 L1 的 19 组会话边界通过；软件休眠回调不作为真实 OS 睡眠证据，本次已补真实 OS 睡眠/账号切换。按 L1+L2 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-21 L3）：临时测试构建在主窗/HUD 正常创建后新增一个隐藏的第二 Renderer，经 preload `window.electronAPI.invoke` 调用 `settings.get`、`app.info`、`auth.me`，均以 `Untrusted IPC sender` 拒绝；主窗同一 `auth.me` 调用被授权并返回 null（无 token）。测试源码补丁已移除、未提交；L1 54/54 覆盖非法 sender/非 boolean/URI/path/token。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-20 实机）：用户 2026-11-10 决定按 Windows 适用范围记通过。真实会话（09:52）`state=ready`、`learning_enabled=false`、`insertion=inserted`；用户修改插入文本后 `learning_events=0`、`cumulative=0`、`dictionary_terms=1`（手动词条 ZephyrDocs 保留），未启动 observe、未自动入词库；设置页「自动学习词条：本版暂不支持」及 Windows 提示实拍，账号学习偏好仍 true。Mac 对照归 TC-WIN-39。
+>
+> 变更记录（2026-11-10，TC-WIN-25 实机）：临时 deny `HKCU\...\Run` 键 `SetValue` 后点「开机自启」，应用显示「未能保存开机自启，已保留原值。」（`AUTOSTART_SAVE_FAILED`），Run/StartupApproved 无残留、开关仍「已关闭」；.NET 还原 ACL（有效 ACE/owner 相同，SDDL 仅 AI 标志差异）后正常开启写入完整路径 + `--background`、系统默认 enabled（StartupApproved 空），再关闭恢复原状。缺 `--background` 读回不符沿用 2026-11-02 实机；回滚失败/不确定状态由 L1 `system-settings.test.ts` 9/9 覆盖。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-27 实机）：系统注销/登录后应用于 11:20:21 以 `--background` 启动，主进程 `MainWindowHandle=0`、无可见主窗、5 个应用进程/2 个 helper；Run 值含 `--background`，账号与手动词条恢复，11:20 后无新会话。手动再次启动只唤出已有主窗、进程仍 5；应用菜单 Exit 后 0 应用/0 helper。未保存账号组：退出登录→后台启动无可见主窗→手动打开显示登录页（无自动登录）。最后清除 Run/StartupApproved，自启关闭。首次注册后立即强退/后台恢复沿用 CI 实际客户端；托盘菜单沿用 TC-WIN-22。按 L1+L3 记通过。
+>
+> 变更记录（2026-11-10，TC-WIN-31 范围）：用户明确决定本用例只保留第二屏组（输入在屏 A、鼠标在屏 B，核对 HUD 在输入所在屏 workArea、有输入位置不优先鼠标），去掉 200% 与 100%/150% 缩放、负坐标单组、经典 caret/UIA range/element/window/mouse 逐层降级等其他参数；第二屏组通过即整条通过。100%/150% 单页插入保留为补充证据（2026-11-10 实测），不作为本用例必需参数。
+>
+> 变更记录（2026-11-10，TC-WIN-31 第二屏组实机）：输入为 cmd，位于主屏 A；鼠标移至第二屏 B（3324,619）。录音中 HUD rect `773,800 375×130`、中心 x=960，完全在屏 A workArea（0,0,1920,1020）内；结果插入 cmd（终端读回 `unverified`，符合终端不可读），HUD 停止后消失。用户确认胶囊在 cmd 所在屏、不在鼠标屏。按新范围记通过。
+>
+> 变更记录（2026-11-10，剩余用例收口）：用户决定 TC-WIN-16、28、38、39、40 不再执行，标为「不做了/视作完成」，按关闭/not_run 记录，不计通过。注：28/38 是同一「另一台 Windows/Win10」选项的两条用例；四项选项实际覆盖 5 条，没有额外的第六条。整体 35/40 通过，测试收口，但不宣称 40/40 或 S5 完整放行。
+>
+> 变更记录（2026-11-10，TC-WIN-28 重新开启并实测）：用户以「没有其他环境」批准在当前机器替代隔离机执行本用例。开启自启后退出应用执行 NSIS 静默卸载（应用运行中首次启动会静默中止，退出后成功）：`%LOCALAPPDATA%\Programs\SmartVoiceInput`、应用/helper 进程、卸载注册项、开始菜单与桌面快捷方式均清理；HKCU Run 仅剩对照假启动项、OneDrive、Edge，StartupApproved\Run 无应用值；HKLM Run/RunOnce、HKCU RunOnce、用户/公共启动文件夹、计划任务、服务均无残留。`%APPDATA%\SmartVoiceInput` 保留账号密文与 `device.json`，词典 ZephyrDocs 保留；对照假启动项在真实 Windows 注销/登录后正常拉起记事本，登录后无 SmartVoiceInput 进程。重装 0.0.2 后 Run/StartupApproved 无本应用项，设置页「开机自启」为「已关闭」，应用用保留账号自动登录。清理机制为 `desktop/build/installer.nsh` 按固定 `APP_ID` 仅删除本应用两个值。安装器 SHA256 `00c0f040…7150`、卸载器 `38377e18…6776`、主程序 `74195351…243B`，重装后主程序与卸载器摘要一致。测试用假启动项已在核验后移除。按 L3 记通过，台账 36/40；TC-WIN-16、38、39、40 仍按关闭/not_run。
 
 ## 覆盖与阶段门禁
 

@@ -15,3 +15,18 @@ export function errorMessage(error: unknown): string {
   }
   return unwrapped;
 }
+
+/** Localize shortcut-policy errors for the English settings UI without changing the RPC contract. */
+export function shortcutErrorMessage(message: string, locale: 'zh-CN' | 'en'): string {
+  if (locale !== 'en') return message;
+  if (message === '快捷键不能为空') return 'Shortcut cannot be empty.';
+  if (message === 'Escape 用于取消操作，不能设为全局快捷键') {
+    return 'Escape is used to cancel. Choose another shortcut.';
+  }
+  if (message === '此快捷键为系统或常用操作保留，请选择其他组合') {
+    return 'This shortcut is reserved by the system or a common action. Choose another combination.';
+  }
+  const unavailable = message.match(/^快捷键 (.+) 不可用，仍保留 (.+)$/);
+  if (unavailable) return `Shortcut ${unavailable[1]} is unavailable; keeping ${unavailable[2]}.`;
+  return message;
+}

@@ -3,6 +3,12 @@ import { join } from 'node:path';
 import { app } from 'electron';
 
 export type NativeEffect = 'none' | 'written' | 'unknown';
+export function nativeHelperPath(): string {
+  const name = `smartvoiceinput-input${process.platform === 'win32' ? '.exe' : ''}`;
+  return app.isPackaged
+    ? join(process.resourcesPath, 'voice', name)
+    : join(app.getAppPath(), 'resources', 'voice', name);
+}
 export class NativeCallError extends Error {
   constructor(message: string, readonly code: string, readonly effect: NativeEffect, readonly action?: string) {
     super(message);
@@ -97,10 +103,7 @@ export class NativeVoiceInput {
   }
 
   private spawnChild(): void {
-    const name = `smartvoiceinput-input${process.platform === 'win32' ? '.exe' : ''}`;
-    const binary = app.isPackaged
-      ? join(process.resourcesPath, 'voice', name)
-      : join(app.getAppPath(), 'resources', 'voice', name);
+    const binary = nativeHelperPath();
     const child = spawn(binary, process.platform === 'win32' ? ['--parent-pid', String(process.pid)] : [],
       { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child = child;

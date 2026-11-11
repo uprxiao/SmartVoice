@@ -17,6 +17,9 @@ import type { Replacement } from './replacement';
 import { windowsInputMessage } from '@shared/windows-input-messages';
 
 const TERMINAL = new Set(['ready', 'empty', 'failed', 'cancelled']);
+// Renderer and Main clocks are calibrated once per recording; sub-millisecond
+// residual skew must not reject a frame captured just before receipt.
+const MAX_FUTURE_CLOCK_SKEW_MS = 50;
 const monotonicEpochMs = (): number => performance.timeOrigin + performance.now();
 const EMPTY_PROGRESS: SessionProgress = { acknowledged_samples: 0,
   session_id: null, attempt_no: null, revision: 0, auto_insert_allowed: false, capture_ready: false,
@@ -344,7 +347,13 @@ export class SessionService {
       const audio = event.audio as Record<string, unknown> | undefined;
       if (this.progress.state !== 'created' || event.session_id !== ctx.sessionId || event.attempt_no !== ctx.attemptNo
         || audio?.encoding !== 'pcm_s16le' || audio.sample_rate_hz !== 16000 || audio.channels !== 1
-        || audio.chunk_samples !== 4000 || audio.max_samples !== this.flow.maxSamples) { this.fail(ctx, 'AUDIO_PROTOCOL_ERROR'); return; }
+        || audio.chunk_samples !== 4000 || audio.max_samples !== this.flow.maxSamples) {
+        if (process.env.SVI_AUDIO_DEBUG) console.error('[audio] ready rejected', {
+          state: this.progress.state, eventSession: event.session_id, ctxSession: ctx.sessionId,
+          eventAttempt: event.attempt_no, ctxAttempt: ctx.attemptNo, audio, flowMax: this.flow.maxSamples,
+        });
+        this.fail(ctx, 'AUDIO_PROTOCOL_ERROR'); return;
+      }
       this.publish({ state: 'streaming' }); this.settleReady(); return;
     }
     if (type === 'audio.ack') {
@@ -411,8 +420,10 @@ export class SessionService {
     if (type === 'cancelled') { this.autoInsertAllowed = false; this.finishTerminal({ state: 'cancelled', result: null }); return; }
     if (type === 'error') {
       const error = (event.error ?? {}) as Record<string, unknown>;
+      if (process.env.SVI_AUDIO_DEBUG) console.error('[audio] server error', event);
       this.fail(ctx, typeof error.code === 'string' ? error.code : 'ASR_FAILED'); return;
     }
+    if (process.env.SVI_AUDIO_DEBUG) console.error('[audio] unknown event', raw.slice(0, 500));
     this.fail(ctx, 'AUDIO_PROTOCOL_ERROR');
   }
 
@@ -449,7 +460,7 @@ export class SessionService {
       const now = monotonicEpochMs();
       // One capture-to-server-ACK budget includes Worklet/Renderer/IPC and WS.
       // A clock-domain defect must be calibrated; receipt cannot restamp old PCM.
-      if (!Number.isFinite(capturedAtMs) || capturedAtMs > now
+      if (!Number.isFinite(capturedAtMs) || capturedAtMs > now + MAX_FUTURE_CLOCK_SKEW_MS
         || (this.lastCapturedAt !== null && capturedAtMs < this.lastCapturedAt)) throw new AudioFlowError('AUDIO_PROTOCOL_ERROR');
       if (now - capturedAtMs >= this.flow.maxUnacknowledgedMs) throw new AudioFlowError('AUDIO_BACKPRESSURE');
       this.flow.checkDeadline(now);

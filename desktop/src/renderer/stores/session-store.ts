@@ -145,10 +145,20 @@ export class SessionStore {
         this.insertionAvailable = started.insertion_available;
         this.progress = { ...EMPTY, session_id: sessionId, attempt_no: started.attempt_no, state: 'streaming' };
       });
+      // Renderer and Main have separate performance.timeOrigin values. Calibrate
+      // once per recording so Main can keep its monotonic future-frame rejection.
+      let clockOffset = 0;
+      try {
+        const before = performance.timeOrigin + performance.now();
+        const clock = await rpc.app.clock();
+        const after = performance.timeOrigin + performance.now();
+        const measured = Number(clock?.now) - (before + after) / 2;
+        if (Number.isFinite(measured) && Math.abs(measured) < 60_000) clockOffset = measured;
+      } catch { /* An unavailable calibration leaves the existing strict clock check intact. */ }
       await this.recorder.start({
         onChunk: (buffer, capturedAtEpochMs) => {
           if (!this.current(generation, userId, sessionId)) return;
-          window.electronAPI.eventSend('session.audio', { session_id: sessionId, buffer, captured_at_ms: capturedAtEpochMs });
+          window.electronAPI.eventSend('session.audio', { session_id: sessionId, buffer, captured_at_ms: capturedAtEpochMs + clockOffset });
         },
         onLevel: level => {
           if (!this.current(generation, userId, sessionId)) return;

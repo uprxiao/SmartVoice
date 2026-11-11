@@ -61,6 +61,7 @@ export function createRpcRouter(deps: RpcDeps) {
           shortcut: deps.shortcuts.current,
         };
       },
+      clock: async () => ({ now: performance.timeOrigin + performance.now() }),
       health: async () => {
         try {
           const caps = await deps.api.capabilities();

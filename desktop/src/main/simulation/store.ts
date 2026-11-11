@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { syncPublishedFile } from '../../../native/durable-file';
+import { renamePublishedFile, syncPublishedFile } from '../../../native/durable-file';
 import type { AuthSnapshot, DictionaryPage, Insertion, Page, Session, SessionResult, Settings, Stats, Term, TokenPair, User } from '@shared/types';
 import type { ImportResult } from '../core/api-client';
 
@@ -203,6 +203,7 @@ export class SimulationStore {
   private state: Snapshot;
   private queue: Promise<void> = Promise.resolve();
   private unavailable = false;
+  private closing = false;
   private readonly file: string;
 
   constructor(private readonly directory: string) {
@@ -235,7 +236,7 @@ export class SimulationStore {
     try {
       const descriptor = openSync(temporary, 'wx', 0o600);
       try { writeFileSync(descriptor, JSON.stringify(next)); fsyncSync(descriptor); } finally { closeSync(descriptor); }
-      renameSync(temporary, this.file); published = true;
+      renamePublishedFile(temporary, this.file); published = true;
       syncPublishedFile(this.directory, this.file);
     } catch {
       if (published) this.unavailable = true;
@@ -246,6 +247,7 @@ export class SimulationStore {
   }
 
   private run<T>(write: boolean, operation: (state: Snapshot) => T): Promise<T> {
+    if (this.closing) return Promise.reject(new SimulationError(503, 'SIMULATION_STORAGE_UNAVAILABLE', '模拟服务正在退出'));
     const task = this.queue.then(() => {
       if (this.unavailable) throw new SimulationError(503, 'SIMULATION_STORAGE_UNAVAILABLE', '模拟状态保存状态不确定，请退出后重启');
       const next = structuredClone(this.state);
@@ -609,5 +611,5 @@ export class SimulationStore {
     });
   }
 
-  async close(): Promise<void> { await this.queue; this.unavailable = true; }
+  async close(): Promise<void> { this.closing = true; await this.queue; this.unavailable = true; }
 }

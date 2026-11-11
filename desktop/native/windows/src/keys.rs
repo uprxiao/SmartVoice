@@ -79,6 +79,20 @@ pub fn send_ctrl_v() -> u32 {
     chord(&[VK_CONTROL, VK_V])
 }
 
+/// Neutralise modifiers that are still physically held and inject Ctrl+V in the
+/// same SendInput batch. A held key auto-repeats and can re-assert its down
+/// state between a separate release and the paste; keeping the release and the
+/// chord contiguous avoids turning the paste into Ctrl+Shift+V / Ctrl+Alt+V.
+pub fn send_ctrl_v_after_releasing(held: &[u16]) -> u32 {
+    let mut seq: Vec<INPUT> = held
+        .iter()
+        .map(|vk| key_input(VIRTUAL_KEY(*vk), true))
+        .collect();
+    seq.extend([VK_CONTROL, VK_V].iter().map(|vk| key_input(*vk, false)));
+    seq.extend([VK_V, VK_CONTROL].iter().map(|vk| key_input(*vk, true)));
+    send_inputs(&seq)
+}
+
 pub fn is_down(vk: VIRTUAL_KEY) -> bool {
     (unsafe { GetAsyncKeyState(vk.0 as i32) } as u16) & 0x8000 != 0
 }
