@@ -46,6 +46,24 @@ export class HudVisibility {
     } else this.hide();
   }
 
+  /**
+   * Show the capsule immediately when the shortcut starts a recording, before
+   * session creation, WebSocket readiness, clock calibration or getUserMedia.
+   * The first real progress replaces it; a bounded timeout hides a stray show.
+   */
+  preparing(ms = 2_500): void {
+    this.endNotice(false);
+    this.clearTimer();
+    this.processingOperation = null;
+    this.show();
+    const generation = this.generation;
+    this.timer = setTimeout(() => {
+      if (generation !== this.generation) return;
+      this.timer = null;
+      this.hide();
+    }, ms);
+  }
+
   /** Show a notice after the session settled; the window stays until `ms` elapse or dismiss(). */
   notice(ms: number): void {
     this.clearTimer();

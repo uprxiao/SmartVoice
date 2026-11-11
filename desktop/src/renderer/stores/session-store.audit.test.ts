@@ -7,7 +7,8 @@ vi.mock('../lib/ipc',()=>({
   events:{on:(event:{name:string},callback:(value:unknown)=>void)=>{doubles.listeners.set(event.name,callback);return ()=>doubles.listeners.delete(event.name);},emit:vi.fn()},
   rpc:{app:{clock:vi.fn()},session:{start:vi.fn(),captureReady:vi.fn(),cancelStart:vi.fn().mockResolvedValue(undefined),cancel:vi.fn(),status:vi.fn(),finish:vi.fn(),insert:vi.fn(),retry:vi.fn(),reset:vi.fn().mockResolvedValue(undefined)},history:{selectForRetry:vi.fn()},auth:{},settings:{}}
 }));
-import { rpc } from '../lib/ipc';
+import { events, rpc } from '../lib/ipc';
+import { hudPreparingEvent } from '@shared/events';
 import { resetClockCalibration } from '../audio/clock-calibration';
 import { RecorderError } from '../audio/recorder';
 import { AuthStore } from './auth-store';
@@ -38,6 +39,7 @@ describe('first-recording clock calibration', () => {
   await store.start();
   expect(rpc.session.start).not.toHaveBeenCalled();
   expect(doubles.start).not.toHaveBeenCalled();
+  expect(events.emit).toHaveBeenCalledWith(hudPreparingEvent, null);
   expect(store.phase).toBe('failed');
   expect(store.error).toBe('语音组件正在准备，请稍后重试');
   expect(ui.toast).toHaveBeenLastCalledWith(store.error,'error');

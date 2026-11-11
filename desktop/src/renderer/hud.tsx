@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   dictationLevelEvent, hudCancelEvent, hudConfirmEvent, hudCopyEvent, hudDismissEvent, hudNoticeEvent,
-  hudOpenAccessibilityEvent, sessionProgressEvent, type HudNotice,
+  hudOpenAccessibilityEvent, hudPreparingEvent, sessionProgressEvent, type HudNotice,
 } from '@shared/events';
 import { advanceHud, EMPTY_HUD, HUD_CLOSE_MS, hudFrame } from '@shared/hud-presentation';
 import type { SessionProgress } from '@shared/types';
@@ -12,6 +12,7 @@ import './hud.css';
 
 function Hud() {
   const [presentation, setPresentation] = useState(EMPTY_HUD);
+  const [preparing, setPreparing] = useState(false);
   const [now, setNow] = useState(() => performance.now());
   const [level, setLevel] = useState(0);
   const [notice, setNotice] = useState<HudNotice | null>(null);
@@ -22,6 +23,7 @@ function Hud() {
   useEffect(() => {
     const apply = (next: SessionProgress) => {
       if (progressRef.current && next.revision < progressRef.current.revision) return;
+      setPreparing(false);
       const time = performance.now();
       progressRef.current = next;
       if (next.locale) setLocale(next.locale);
@@ -36,8 +38,12 @@ function Hud() {
       if (presentationRef.current.phase === 'recording') setLevel(value);
     });
     const offNotice = events.on(hudNoticeEvent, value => setNotice(value));
+    const offPreparing = events.on(hudPreparingEvent, () => {
+      setPreparing(true);
+      setNow(performance.now());
+    });
     void rpc.session.status().then(apply).catch(() => undefined);
-    return () => { offProgress(); offLevel(); offNotice(); };
+    return () => { offProgress(); offLevel(); offNotice(); offPreparing(); };
   }, []);
 
   useEffect(() => {
@@ -51,7 +57,10 @@ function Hud() {
     return () => clearInterval(timer);
   }, [presentation.phase, presentation.completedAt]);
 
-  return <HudView frame={hudFrame(presentation, now)} level={level} notice={notice} locale={notice?.locale ?? locale}
+  const frame = preparing
+    ? hudFrame({ ...EMPTY_HUD, phase: 'preparing' }, now)
+    : hudFrame(presentation, now);
+  return <HudView frame={frame} level={level} notice={notice} locale={notice?.locale ?? locale}
     onCancel={() => events.emit(hudCancelEvent, null)}
     onConfirm={() => events.emit(hudConfirmEvent, null)}
     onCopy={() => events.emit(hudCopyEvent, null)}

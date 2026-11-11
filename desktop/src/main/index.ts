@@ -11,6 +11,7 @@ import {
   hudCancelEvent,
   hudConfirmEvent,
   hudNoticeEvent,
+  hudPreparingEvent,
   type HudNotice,
   learningLearnedEvent,
   learningSuggestedEvent,
@@ -206,6 +207,15 @@ async function main(): Promise<void> {
   };
   ipcMain.on('hud.confirm', event => { if (hudSender(event)) events.emit(hudConfirmEvent, null); });
   ipcMain.on('hud.cancel', event => { if (hudSender(event)) events.emit(hudCancelEvent, null); });
+  ipcMain.on('hud.preparing', event => {
+    const win = getMainWindow();
+    if (!win || event.sender !== win.webContents) return;
+    // The shortcut is a start only when no Main session is active; a stop keeps
+    // the existing progress-owned HUD instead of flashing a preparing capsule.
+    if (!auth.current?.user || sessions?.isBusy()) return;
+    events.emit(hudPreparingEvent, null);
+    hudVisibility.preparing();
+  });
   ipcMain.on('hud.copy', event => {
     if (!hudSender(event)) return;
     const text = sessionService.status.result?.refined_text;

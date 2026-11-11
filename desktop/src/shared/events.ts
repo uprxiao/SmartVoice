@@ -9,6 +9,8 @@ export const dictationLevelEvent = defineEvent<number>('dictation.level');
 export const hotkeyToggleEvent = defineEvent<null>('hotkey.toggle');
 export const hudConfirmEvent = defineEvent<null>('hud.confirm');
 export const hudCancelEvent = defineEvent<null>('hud.cancel');
+/** Renderer→Main at shortcut time, then Main→HUD: show the preparing capsule before session setup. */
+export const hudPreparingEvent = defineEvent<null>('hud.preparing');
 export const learningSuggestedEvent = defineEvent<LearningSuggestion>('learning.suggested');
 export const learningLearnedEvent = defineEvent<LearningSuggestion>('learning.learned');
 

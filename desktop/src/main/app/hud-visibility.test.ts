@@ -10,6 +10,24 @@ function progress(state: SessionProgress['state'], revision: number, session_id:
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
+describe('shortcut-time preparing capsule', () => {
+  it('shows immediately and hides if no session progress arrives', () => {
+    const show = vi.fn(), hide = vi.fn(), window = new HudVisibility(show, hide);
+    window.preparing();
+    expect(show).toHaveBeenCalledOnce(); expect(hide).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_500);
+    expect(hide).toHaveBeenCalledOnce(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('hands the window to real progress and clears the stray-show timeout', () => {
+    const show = vi.fn(), hide = vi.fn(), window = new HudVisibility(show, hide);
+    window.preparing();
+    window.update(progress('streaming', 1, 'new'), true);
+    expect(show).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(2_500);
+    expect(hide).not.toHaveBeenCalled();
+  });
+});
+
 describe('non-activating HUD window lifetime', () => {
   it('hides idle null-SID but permits the existing busy preparation window', () => {
     const show = vi.fn(), hide = vi.fn(), window = new HudVisibility(show, hide);

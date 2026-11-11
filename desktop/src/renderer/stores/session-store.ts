@@ -1,5 +1,5 @@
 import { makeAutoObservable, reaction, runInAction } from 'mobx';
-import { dictationLevelEvent, hudCancelEvent, hudConfirmEvent, sessionProgressEvent, sessionResultEvent, sessionErrorEvent } from '@shared/events';
+import { dictationLevelEvent, hudCancelEvent, hudConfirmEvent, hudPreparingEvent, sessionProgressEvent, sessionResultEvent, sessionErrorEvent } from '@shared/events';
 import type { InsertionOutcome, SessionProgress, SessionState } from '@shared/types';
 import { errorMessage } from '../lib/error-message';
 import { events, rpc } from '../lib/ipc';
@@ -139,6 +139,9 @@ export class SessionStore {
     const startOperationId = crypto.randomUUID();
     this.pendingStartId = startOperationId;
     try {
+      // Feedback before clock calibration, session creation and WebSocket setup:
+      // the preparing capsule must not wait for those steps.
+      events.emit(hudPreparingEvent, null);
       // Calibrate before creating a server session: an uncalibrated renderer must
       // not start recording and then trip Main's two-second stale-frame guard.
       clockOffset = await ensureClockOffset(() => rpc.app.clock());
