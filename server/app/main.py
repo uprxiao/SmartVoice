@@ -166,20 +166,53 @@ async def _recover_interrupted_sessions(db, *, identities=None):
 
 
 async def _instance_lock_alive(connection, key: int, backend_pid: int, *, connection_mutex=None):
-    if connection is None or connection.closed or connection.invalidated:
+    loop = asyncio.get_running_loop()
+    started, stage = loop.time(), "connection"
+
+    def diagnostic(reason, error=None):
+        original = getattr(error, "orig", None)
+        sqlstate = getattr(original, "sqlstate", None) or getattr(error, "sqlstate", None)
+        sqlstate = sqlstate if isinstance(sqlstate, str) and len(sqlstate) == 5 and sqlstate.isascii() and sqlstate.isalnum() else "none"
+        logger.error("instance_lock_probe_failed reason=%s stage=%s elapsed_ms=%d backend_pid=%d error_type=%s driver_error_type=%s sqlstate=%s",
+                     reason, stage, round((loop.time() - started) * 1000), backend_pid,
+                     type(error).__name__ if error is not None else "none",
+                     type(original).__name__ if original is not None else "none", sqlstate)
+
+    def connection_unavailable():
+        reason = ("connection_missing" if connection is None else
+                  "connection_closed" if connection.closed else
+                  "connection_invalidated" if connection.invalidated else None)
+        if reason:
+            diagnostic(reason)
+        return bool(reason)
+
+    if connection_unavailable():
         return False
     unsigned = key % (1 << 64)
-    query = text("""select pg_backend_pid() = :pid and exists(
+    query = text("""select case when pg_backend_pid() <> :pid then 'backend_changed'
+        when exists(
         select 1 from pg_locks where locktype='advisory' and granted
-        and pid=pg_backend_pid() and classid::bigint=:high and objid::bigint=:low and objsubid=1)""")
-    async with asyncio.timeout(2):
-        # Queueing behind startup's snapshot is part of the original 2s budget.
-        async with (connection_mutex if connection_mutex is not None else nullcontext()):
-            if connection.closed or connection.invalidated:
+        and pid=pg_backend_pid() and classid::bigint=:high and objid::bigint=:low and objsubid=1)
+        then 'owned' else 'lock_missing' end""")
+    try:
+        async with asyncio.timeout(2):
+            stage = "mutex"
+            # Queueing behind startup's snapshot is part of the original 2s budget.
+            async with (connection_mutex if connection_mutex is not None else nullcontext()):
+                stage = "connection"
+                if connection_unavailable():
+                    return False
+                stage = "query"
+                result = await connection.scalar(query, {"pid": backend_pid, "high": unsigned >> 32, "low": unsigned & 0xffffffff})
+                stage = "commit"
+                await connection.commit()
+                if result == "owned":
+                    return True
+                diagnostic(result if result in {"backend_changed", "lock_missing"} else "probe_invalid_result")
                 return False
-            alive = bool(await connection.scalar(query, {"pid": backend_pid, "high": unsigned >> 32, "low": unsigned & 0xffffffff}))
-            await connection.commit()
-            return alive
+    except Exception as exc:
+        diagnostic("probe_timeout" if isinstance(exc, TimeoutError) else "probe_error", exc)
+        raise
 
 
 def _cancel_owned_tasks(*tasks):
@@ -196,6 +229,7 @@ async def _fence_instance(app):
     state = app.state
     state.instance_fenced, state.ready, state.degraded = True, False, True
     state.unavailable_reason = "INSTANCE_LOCK_LOST"
+    logger.critical("instance_fenced reason=INSTANCE_LOCK_LOST recovery=process_restart")
     tasks = _cancel_owned_tasks(
         state.startup_task, state.probe_task, state.cleanup_task, state.llm_prepare_task,
     )
@@ -219,11 +253,17 @@ async def _fence_instance(app):
     for result in results:
         if isinstance(result, BaseException):
             logger.error("Instance fence cleanup incomplete: %s", type(result).__name__)
+    if not any(isinstance(result, BaseException) for result in results):
+        logger.warning("instance_fence_cleanup_complete")
 
 
 async def _watch_instance_lock(app, connection, backend_pid):
     while not app.state.instance_fenced:
+        expected = asyncio.get_running_loop().time() + 1
         await asyncio.sleep(1)
+        lag_ms = round(max(0, asyncio.get_running_loop().time() - expected) * 1000)
+        if lag_ms >= 1000:
+            logger.warning("instance_lock_watch_delayed loop_lag_ms=%d backend_pid=%d", lag_ms, backend_pid)
         if app.state.instance_fenced:
             return
         try:
@@ -730,11 +770,15 @@ def create_server(application: FastAPI, **overrides):
         ws="websockets", proxy_headers=False, access_log=False)
     options.update(overrides)
     return ManagedServer(uvicorn.Config(application, **options),
-        begin_shutdown=lambda: _begin_instance_shutdown(application))
+        begin_shutdown=lambda: _begin_instance_shutdown(application),
+        fatal_reason=lambda: "INSTANCE_LOCK_LOST" if getattr(application.state, "instance_fenced", False) else None)
 
 
 def main() -> None:
-    create_server(app).run()
+    server = create_server(app)
+    server.run()
+    if server.exit_code:
+        raise SystemExit(server.exit_code)
 
 
 if __name__ == "__main__":

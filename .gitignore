@@ -83,6 +83,7 @@ docs/01-prototype/verification-*
 # 测试：只公开用例定义、覆盖表、执行矩阵、夹具说明与实验模板，执行记录与证据只在本地
 docs/04-test/*
 !docs/04-test/test-cases.md
+!docs/04-test/test-cases-instance-lock-recovery.md
 !docs/04-test/test-cases-v2.md
 !docs/04-test/test-cases-windows-v002.md
 !docs/04-test/test-cases-windows-simulation.md

@@ -4,9 +4,12 @@
 Description=SmartVoiceInput server
 After=network-online.target postgresql.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=svi
 Group=svi
 WorkingDirectory=/opt/smartvoiceinput/server
@@ -20,6 +23,11 @@ ExecStart=/opt/smartvoiceinput/venv/bin/python -m app.main
 # Alternative where uv is installed: /usr/local/bin/uv run --frozen --no-dev python -m app.main
 KillSignal=SIGTERM
 TimeoutStopSec=60
+TimeoutStartSec=60
+WatchdogSec=30
+WatchdogSignal=SIGKILL
+KillMode=control-group
+SendSIGKILL=yes
 Restart=on-failure
 RestartSec=5
 # Memory: measured peak RSS 813 MB with 20 active 360 s sessions + 20 retained failed

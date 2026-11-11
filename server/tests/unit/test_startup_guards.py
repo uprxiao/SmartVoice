@@ -8,7 +8,7 @@ from app import main
 
 class Connection:
     closed = invalidated = False
-    def __init__(self, *, alive=True):
+    def __init__(self, *, alive="owned"):
         self.alive, self.queries, self.commits = alive, [], 0
     async def __aenter__(self):
         return self
@@ -35,7 +35,7 @@ def test_schema_requires_exact_migration_head(monkeypatch):
 
 
 def test_instance_guard_checks_existing_pid_and_lock_without_reacquiring():
-    connection = Connection(alive=False)
+    connection = Connection(alive="lock_missing")
     assert asyncio.run(main._instance_lock_alive(connection, 420017863, 123)) is False
     query, params = connection.queries[0]
     assert 'pg_backend_pid()' in query and 'pg_locks' in query
